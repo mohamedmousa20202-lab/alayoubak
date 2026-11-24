@@ -375,3 +375,11 @@ td.ltr,span.ltr{direction:ltr;unicode-bidi:embed;font-family:ui-monospace,Consol
 .sa-stem .qimg{text-align:center}.sa-stem .qimg img{display:inline-block}
 #saPos{white-space:nowrap}
 @media (max-width:820px){.sa-title{min-width:0;flex:1}.sa-title b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}.sa-title b span{display:none}.sa-top .spacer{display:none}.sa-ib{width:34px}.sa-arrow{width:30px;height:30px}.sa-flag{width:40px}}
+/* أقسام الصفوف */
+.sec-tabs{display:flex;flex-wrap:wrap;gap:8px;padding:2px 2px 12px;margin-bottom:4px}
+.main{min-width:0}
+.sec-tab{flex:none;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:8px 14px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap}
+.sec-tab span{background:var(--brand-soft,#e7f3ef);color:var(--brand,#0f6b5c);border-radius:999px;min-width:22px;padding:0 7px;font-size:12px;line-height:20px;text-align:center}
+.sec-tab.on{background:var(--brand,#0f6b5c);color:#fff;border-color:transparent}.sec-tab.on span{background:rgba(255,255,255,.25);color:#fff}
+.sec-head{margin-bottom:6px}.sec-head h3{margin:0}
+@media (max-width:600px){.item{flex-wrap:wrap}.item>.body{flex:1 1 60%;min-width:0}.item>.row{width:100%;justify-content:flex-end}}

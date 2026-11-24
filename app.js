@@ -133,6 +133,34 @@ function classPicker(selected = []) {
     SITE.classes.map((c) => `<label class="check"><input type="checkbox" name="cls" value="${esc(c)}" ${selected.includes(c) ? "checked" : ""}> ${esc(c)}</label>`).join("")}</div></div>`;
 }
 const pickedClasses = (root) => $$('input[name=cls]:checked', root).map((i) => i.value);
+// تقسيم صفحات المعلم إلى أقسام حسب الصفوف (تبويبات)
+const secGet = (k) => { try { return localStorage.getItem("sec-" + k); } catch { return null; } };
+const secSet = (k, v) => { try { localStorage.setItem("sec-" + k, v); } catch {} };
+// عند إنشاء عنصر جديد من داخل قسم صف معيّن، يُختار ذلك الصف تلقائياً
+const newCls = () => { try { const c = sessionStorage.getItem("newcls"); sessionStorage.removeItem("newcls"); return c && SITE.classes.includes(c) ? [c] : []; } catch { return []; } };
+function mountSections(el, key, items, row, { empty = "لا يوجد محتوى بعد.", noun = "عنصر", newHref = "" } = {}) {
+  const forC = (c) => items.filter(([x]) => x.classes?.includes(c));
+  const shared = items.filter(([x]) => !x.classes?.length);
+  let cur = secGet(key);
+  if (cur !== "all" && !SITE.classes.includes(cur)) cur = SITE.classes.find((c) => forC(c).length) || "all";
+  const draw = () => {
+    secSet(key, cur);
+    const tabs = `<div class="sec-tabs">${SITE.classes.map((c) => `<button type="button" class="sec-tab ${cur === c ? "on" : ""}" data-sec="${esc(c)}">${esc(c.replace(/^الصف\s+/, ""))}<span>${forC(c).length}</span></button>`).join("")}
+      <button type="button" class="sec-tab ${cur === "all" ? "on" : ""}" data-sec="all">الكل<span>${items.length}</span></button></div>`;
+    let body;
+    if (cur === "all") body = `<div class="card">${items.length ? items.map(([x, i]) => row(x, i)).join("") : `<div class="empty">${empty}</div>`}</div>`;
+    else {
+      const own = forC(cur);
+      body = `<div class="card"><div class="row sec-head"><h3>${esc(cur)}</h3><span class="muted">${own.length} ${noun}</span><span class="spacer"></span>${newHref ? `<a class="btn sm" href="${newHref}" data-newcls="${esc(cur)}">+ إضافة إلى ${esc(cur)}</a>` : ""}</div>
+        ${own.length ? own.map(([x, i]) => row(x, i)).join("") : `<div class="empty">لا يوجد ${noun} خاص بهذا الصف بعد.</div>`}</div>
+        ${shared.length ? `<div class="card"><div class="row sec-head"><h3>مشترك لجميع الصفوف</h3><span class="muted">${shared.length} ${noun}</span></div>${shared.map(([x, i]) => row(x, i)).join("")}</div>` : ""}`;
+    }
+    el.innerHTML = tabs + body;
+    $$(".sec-tab", el).forEach((b) => (b.onclick = () => { cur = b.dataset.sec; draw(); }));
+    $$("[data-newcls]", el).forEach((a) => (a.onclick = () => { try { sessionStorage.setItem("newcls", a.dataset.newcls); } catch {} }));
+  };
+  draw();
+}
 const classLabel = (cl) => (!cl || !cl.length ? `<span class="pill gray">كل الصفوف</span>` : cl.map((c) => `<span class="pill gray">${esc(c)}</span>`).join(" "));
 function downloadCSV(name, rows) {
   const csv = "﻿" + rows.map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -500,14 +528,13 @@ async function tLessons(main) {
   const lessons = await all("lessons");
   lessons.sort((a, b) => (a.unit || "").localeCompare(b.unit || "", "ar") || (a.order ?? 0) - (b.order ?? 0) || (ts(a.createdAt) || 0) - (ts(b.createdAt) || 0));
   const views = await Promise.all(lessons.map((l) => count(query(col("views"), where("lessonId", "==", l.id)))));
-  main.innerHTML = `<div class="page-head"><div><h1>الدروس</h1><p class="sub">${lessons.length} درس</p></div><a class="btn" href="#/lesson-edit/new">+ درس جديد</a></div>
-  <div class="card">${lessons.length ? lessons.map((l, i) => `<div class="item"><div class="ic">📘</div><div class="body">
+  main.innerHTML = `<div class="page-head"><div><h1>الدروس</h1><p class="sub">${lessons.length} درس — مقسّمة حسب الصفوف</p></div><a class="btn" href="#/lesson-edit/new">+ درس جديد</a></div><div id="secwrap"></div>`;
+  mountSections($("#secwrap"), "lessons", lessons.map((l, i) => [l, i]), (l, i) => `<div class="item"><div class="ic">📘</div><div class="body">
     <div class="t">${esc(l.title)}</div><div class="m">${esc(l.unit || "")} ${classLabel(l.classes)} · فتحه ${views[i]} طالب</div></div>
-    <div class="row">${l.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/lesson/${l.id}">معاينة</a><a class="btn sm" href="#/lesson-edit/${l.id}">تعديل</a></div></div>`).join("")
-  : `<div class="empty">لا توجد دروس بعد.</div>`}</div>`;
+    <div class="row">${l.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/lesson/${l.id}">معاينة</a><a class="btn sm" href="#/lesson-edit/${l.id}">تعديل</a></div></div>`, { empty: "لا توجد دروس بعد.", noun: "درس", newHref: "#/lesson-edit/new" });
 }
 async function tLessonEdit(main, id) {
-  const isNew = id === "new"; let l = { title: "", unit: "", body: "", videoUrl: "", pdfUrl: "", published: false, classes: [], order: 0 };
+  const isNew = id === "new"; let l = { title: "", unit: "", body: "", videoUrl: "", pdfUrl: "", published: false, classes: isNew ? newCls() : [], order: 0 };
   if (!isNew) { const s = await getDoc(doc(db, "lessons", id)); if (!s.exists()) return go("lessons"); l = { ...l, ...s.data() }; }
   main.innerHTML = `<div class="page-head"><h1>${isNew ? "درس جديد" : "تعديل الدرس"}</h1><a class="btn ghost" href="#/lessons">رجوع</a></div>
   <form class="card" id="lf">
@@ -542,12 +569,11 @@ async function tQuizzes(main) {
   const [quizzes, sz] = await Promise.all([all("quizzes"), classSizes()]);
   quizzes.sort(byDate);
   const done = await Promise.all(quizzes.map((q) => count(query(col("submissions"), where("quizId", "==", q.id)))));
-  main.innerHTML = `<div class="page-head"><div><h1>الاختبارات</h1><p class="sub">تصحيح تلقائي — مفتاح الإجابات محمي ولا يصل للطالب قبل التسليم</p></div><a class="btn" href="#/quiz-edit/new">+ اختبار جديد</a></div>
-  <div class="card">${quizzes.length ? quizzes.map((q, i) => `<div class="item"><div class="ic">📝</div><div class="body"><div class="t">${esc(q.title)}</div>
+  main.innerHTML = `<div class="page-head"><div><h1>الاختبارات</h1><p class="sub">تصحيح تلقائي — مفتاح الإجابات محمي ولا يصل للطالب قبل التسليم</p></div><a class="btn" href="#/quiz-edit/new">+ اختبار جديد</a></div><div id="secwrap"></div>`;
+  mountSections($("#secwrap"), "quizzes", quizzes.map((q, i) => [q, i]), (q, i) => `<div class="item"><div class="ic">📝</div><div class="body"><div class="t">${esc(q.title)}</div>
       <div class="m">${q.count || 0} سؤال · ${classLabel(q.classes)} · سلّمه ${done[i]} من ${targetSize(sz, q.classes)}</div></div>
       <div class="row">${!q.published ? `<span class="pill gray">مسودة</span>` : q.open ? `<span class="pill ok">مفتوح</span>` : `<span class="pill warn">مغلق</span>`}
-      <a class="btn ghost sm" href="#/quiz-results/${q.id}">النتائج</a><a class="btn sm" href="#/quiz-edit/${q.id}">تعديل</a></div></div>`).join("")
-  : `<div class="empty">لا توجد اختبارات بعد.</div>`}</div>`;
+      <a class="btn ghost sm" href="#/quiz-results/${q.id}">النتائج</a><a class="btn sm" href="#/quiz-edit/${q.id}">تعديل</a></div></div>`, { empty: "لا توجد اختبارات بعد.", noun: "اختبار", newHref: "#/quiz-edit/new" });
 }
 const LETTERS = ["أ", "ب", "ج", "د", "هـ", "و"];
 function parseBulk(text) {
@@ -572,7 +598,7 @@ function parseBulk(text) {
 }
 async function tQuizEdit(main, id) {
   const isNew = id === "new";
-  let q = { title: "", description: "", classes: [], published: false, open: true, showResults: true, timeLimit: 0, shuffle: false };
+  let q = { title: "", description: "", classes: isNew ? newCls() : [], published: false, open: true, showResults: true, timeLimit: 0, shuffle: false };
   let questions = [{ text: "", options: ["", "", "", ""], answer: 0, explanation: "", image: "", points: 1 }];
   if (!isNew) {
     const [qs, ks] = await Promise.all([getDoc(doc(db, "quizzes", id)), getDoc(doc(db, "quizKeys", id))]);
@@ -714,14 +740,13 @@ async function tQuizResults(main, id) {
 async function tAssignments(main) {
   const as = (await all("assignments")).sort(byDate);
   const cnt = await Promise.all(as.map((a) => Promise.all([count(query(col("homework"), where("assignmentId", "==", a.id))), count(query(col("homework"), where("assignmentId", "==", a.id), where("graded", "==", false)))])));
-  main.innerHTML = `<div class="page-head"><div><h1>الواجبات</h1></div><a class="btn" href="#/assign-edit/new">+ واجب جديد</a></div>
-  <div class="card">${as.length ? as.map((a, i) => { const [tot, pend] = cnt[i];
+  main.innerHTML = `<div class="page-head"><div><h1>الواجبات</h1></div><a class="btn" href="#/assign-edit/new">+ واجب جديد</a></div><div id="secwrap"></div>`;
+  mountSections($("#secwrap"), "assignments", as.map((a, i) => [a, i]), (a, i) => { const [tot, pend] = cnt[i];
     return `<div class="item"><div class="ic">📂</div><div class="body"><div class="t">${esc(a.title)}</div><div class="m">التسليم حتى: ${a.due ? fmt(a.due) : "مفتوح"} · ${classLabel(a.classes)} · ${tot} تسليم${pend ? ` · <b style="color:var(--accent)">${pend} بانتظار التصحيح</b>` : ""}</div></div>
-    <div class="row">${a.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/assign-subs/${a.id}">التسليمات</a><a class="btn sm" href="#/assign-edit/${a.id}">تعديل</a></div></div>`; }).join("")
-  : `<div class="empty">لا توجد واجبات بعد.</div>`}</div>`;
+    <div class="row">${a.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/assign-subs/${a.id}">التسليمات</a><a class="btn sm" href="#/assign-edit/${a.id}">تعديل</a></div></div>`; }, { empty: "لا توجد واجبات بعد.", noun: "واجب", newHref: "#/assign-edit/new" });
 }
 async function tAssignEdit(main, id) {
-  const isNew = id === "new"; let a = { title: "", body: "", link: "", due: "", published: false, classes: [], maxGrade: 10 };
+  const isNew = id === "new"; let a = { title: "", body: "", link: "", due: "", published: false, classes: isNew ? newCls() : [], maxGrade: 10 };
   if (!isNew) { const s = await getDoc(doc(db, "assignments", id)); if (!s.exists()) return go("assignments"); a = { ...a, ...s.data() }; }
   const dueVal = a.due ? new Date(ts(a.due).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
   main.innerHTML = `<div class="page-head"><h1>${isNew ? "واجب جديد" : "تعديل الواجب"}</h1><a class="btn ghost" href="#/assignments">رجوع</a></div>
@@ -1220,12 +1245,12 @@ function pCalc(main) {
 // ---------- بنك الأسئلة (تدريب غير محسوب) ----------
 async function tBank(main) {
   const banks = (await all("banks")).sort((a, b) => (a.unit || "").localeCompare(b.unit || "", "ar") || byDate(a, b));
-  main.innerHTML = `<div class="page-head"><div><h1>بنك الأسئلة</h1><p class="sub">تدريب حر للطلاب مع الحل الفوري — لا يُحسب في الدرجات</p></div><a class="btn" href="#/bank-edit/new">+ مجموعة أسئلة</a></div>
-  <div class="card">${banks.map((b) => `<div class="item"><div class="ic">📚</div><div class="body"><div class="t">${esc(b.title)}</div><div class="m">${esc(b.unit || "")} · ${b.count || 0} سؤال · ${classLabel(b.classes)}</div></div>
-    <div class="row">${b.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/bankq/${b.id}">تجربة</a><a class="btn sm" href="#/bank-edit/${b.id}">تعديل</a></div></div>`).join("") || `<div class="empty">لا توجد مجموعات بعد. أضف أسئلة ملازمك هنا ليتدرب عليها الطلاب.</div>`}</div>`;
+  main.innerHTML = `<div class="page-head"><div><h1>بنك الأسئلة</h1><p class="sub">تدريب حر للطلاب مع الحل الفوري — لا يُحسب في الدرجات</p></div><a class="btn" href="#/bank-edit/new">+ مجموعة أسئلة</a></div><div id="secwrap"></div>`;
+  mountSections($("#secwrap"), "bank", banks.map((b, i) => [b, i]), (b) => `<div class="item"><div class="ic">📚</div><div class="body"><div class="t">${esc(b.title)}</div><div class="m">${esc(b.unit || "")} · ${b.count || 0} سؤال · ${classLabel(b.classes)}</div></div>
+    <div class="row">${b.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/bankq/${b.id}">تجربة</a><a class="btn sm" href="#/bank-edit/${b.id}">تعديل</a></div></div>`, { empty: "لا توجد مجموعات بعد. أضف أسئلة ملازمك هنا ليتدرب عليها الطلاب.", noun: "مجموعة", newHref: "#/bank-edit/new" });
 }
 async function tBankEdit(main, id) {
-  const isNew = id === "new"; let b = { title: "", unit: "", src: "", classes: [], published: false };
+  const isNew = id === "new"; let b = { title: "", unit: "", src: "", classes: isNew ? newCls() : [], published: false };
   if (!isNew) { const s = await getDoc(doc(db, "banks", id)); if (!s.exists()) return go("bank"); b = { ...b, ...s.data() }; }
   main.innerHTML = `<div class="page-head"><h1>${isNew ? "مجموعة أسئلة جديدة" : "تعديل مجموعة الأسئلة"}</h1><a class="btn ghost" href="#/bank">رجوع</a></div>
   <form class="card" id="bf"><div class="grid g2"><div class="field"><label>العنوان</label><input type="text" name="title" value="${esc(b.title)}" required placeholder="مراجعة الغازات – الجزء 1"></div>
