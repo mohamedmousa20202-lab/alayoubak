@@ -43,7 +43,7 @@ button,input,select,textarea{font-family:inherit;font-size:15px}
 /* ---------- forms ---------- */
 label{display:block;font-weight:500;margin:0 0 6px;font-size:14px}
 .field{margin-bottom:16px}
-input[type=text],input[type=password],input[type=email],input[type=url],input[type=number],input[type=datetime-local],select,textarea{
+input[type=text],input[type=password],input[type=email],input[type=tel],input[type=url],input[type=number],input[type=datetime-local],select,textarea{
   width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);transition:border-color .15s}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--brand-2)}
 textarea{min-height:110px;resize:vertical;line-height:1.7}

@@ -66,13 +66,24 @@ const prefCls = (k, v) => { try { if (v !== undefined) localStorage.setItem("cls
 const clsSelect = (id, sel, allLabel = "كل الصفوف") => `<select id="${id}" style="width:auto">${SITE.classes.map((c) => `<option ${c === sel ? "selected" : ""}>${esc(c)}</option>`).join("")}<option value="" ${sel === "" ? "selected" : ""}>${allLabel}</option></select>`;
 // طلاب صفوف معيّنة فقط (بدل قراءة كل الطلاب)
 const studentsIn = async (classes) => (classes?.length && classes.length <= 10 ? list(query(col("students"), where("className", "in", classes))) : all("students")).then((x) => x.filter((s) => s.name));
+// رقم الهاتف ← معرّف دخول داخلي (لا يحتاج رسائل SMS)
+const normPhone = (v) => {
+  let d = String(v || "").replace(/[٠-٩]/g, (c) => "٠١٢٣٤٥٦٧٨٩".indexOf(c)).replace(/[۰-۹]/g, (c) => "۰۱۲۳۴۵۶۷۸۹".indexOf(c)).replace(/\D/g, "");
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("971")) d = "0" + d.slice(3);
+  if (/^5\d{8}$/.test(d)) d = "0" + d;
+  return /^0\d{8,11}$/.test(d) ? d : "";
+};
+const phoneEmail = (p) => `${p}@${STUDENT_DOMAIN}`;
+// ما يُعرض للمعلم: رقم الهاتف (أو اسم الدخول) بدل البريد الداخلي
+const loginId = (s) => { const e = s.email || ""; return e.endsWith("@" + STUDENT_DOMAIN) ? e.split("@")[0] : (e || s.username || ""); };
 const errMsg = (e) => {
   const c = e?.code || "";
   if (c.includes("permission")) return "ليس لديك صلاحية لهذا الإجراء.";
-  if (c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found")) return "البريد أو كلمة المرور غير صحيحة.";
-  if (c.includes("invalid-email")) return "صيغة البريد الإلكتروني غير صحيحة.";
+  if (c.includes("invalid-credential") || c.includes("wrong-password") || c.includes("user-not-found")) return "رقم الهاتف أو كلمة المرور غير صحيحة.";
+  if (c.includes("invalid-email")) return "صيغة رقم الهاتف غير صحيحة.";
   if (c.includes("too-many-requests")) return "محاولات كثيرة. انتظر قليلاً ثم حاول مجدداً.";
-  if (c.includes("email-already-in-use")) return "هذا البريد/اسم الدخول مسجل من قبل. جرّب تسجيل الدخول بدلاً من ذلك.";
+  if (c.includes("email-already-in-use")) return "هذا الرقم مسجل من قبل. جرّب تسجيل الدخول بدلاً من ذلك، أو تواصل مع المعلم.";
   if (c.includes("weak-password")) return "كلمة المرور ضعيفة: 6 أحرف على الأقل.";
   if (c.includes("operation-not-allowed")) return "التسجيل غير مفعّل في إعدادات Firebase.";
   if (c.includes("network")) return "تعذّر الاتصال بالإنترنت.";
@@ -144,12 +155,12 @@ function renderLogin(error = "", mode = "login", note = "") {
         <p class="sub">بعد التسجيل سيراجع المعلم طلبك ويفعّل حسابك.</p>
         <div class="field"><label>الاسم الكامل (ثلاثي)</label><input type="text" name="name" required minlength="3" maxlength="60"></div>
         <div class="field"><label>الصف</label><select name="cls" required><option value="">— اختر صفك —</option>${SITE.classes.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
-        <div class="field"><label>البريد الإلكتروني</label><input type="email" name="email" dir="ltr" required autocomplete="email" placeholder="name@example.com"><p class="hint">يُفضّل بريد المدرسة. ستحتاجه إذا نسيت كلمة المرور.</p></div>
+        <div class="field"><label>رقم الهاتف</label><input type="tel" name="phone" dir="ltr" required inputmode="tel" autocomplete="tel" placeholder="05XXXXXXXX"><p class="hint">ستدخل به إلى المنصة في كل مرة. اكتب رقمك أنت (أو رقم ولي الأمر).</p></div>
         <div class="grid g2" style="gap:10px"><div class="field"><label>كلمة المرور</label><input type="password" name="p" dir="ltr" required minlength="6" autocomplete="new-password"></div>
         <div class="field"><label>تأكيد كلمة المرور</label><input type="password" name="p2" dir="ltr" required minlength="6" autocomplete="new-password"></div></div>
         <button class="btn block" type="submit">إنشاء الحساب</button></form>`
       : `<form id="loginForm" autocomplete="on">
-        <div class="field"><label>البريد الإلكتروني</label><input type="text" name="u" dir="ltr" required autocomplete="username"></div>
+        <div class="field"><label>رقم الهاتف</label><input type="text" name="u" dir="ltr" required inputmode="tel" autocomplete="username" placeholder="05XXXXXXXX"></div>
         <div class="field"><label>كلمة المرور</label><input type="password" name="p" dir="ltr" required autocomplete="current-password"></div>
         <button class="btn block" type="submit">دخول</button>
         <p style="text-align:center;margin-top:14px"><button type="button" class="btn link sm" id="forgot">نسيت كلمة المرور؟</button></p></form>`}
@@ -159,7 +170,8 @@ function renderLogin(error = "", mode = "login", note = "") {
   if (reg) {
     $("#regForm").onsubmit = async (e) => {
       e.preventDefault(); const f = e.target, btn = $("button[type=submit]", f);
-      const name = f.name.value.trim().replace(/\s+/g, " "), email = f.email.value.trim().toLowerCase();
+      const name = f.name.value.trim().replace(/\s+/g, " "), ph = normPhone(f.phone.value), email = phoneEmail(ph);
+      if (!ph) return renderLoginErrKeep(f, "اكتب رقم هاتف صحيحاً، مثل 0501234567.");
       if (f.p.value !== f.p2.value) return renderLoginErrKeep(f, "كلمتا المرور غير متطابقتين.");
       if (!f.cls.value) return renderLoginErrKeep(f, "اختر صفك.");
       busy(btn, true, "جارٍ إنشاء الحساب...");
@@ -177,14 +189,14 @@ function renderLogin(error = "", mode = "login", note = "") {
     $("#loginForm").onsubmit = async (e) => {
       e.preventDefault(); const f = e.target; const btn = $("button[type=submit]", f);
       const u = f.u.value.trim().toLowerCase();
-      const email = u.includes("@") ? u : `${u}@${STUDENT_DOMAIN}`;
+      const email = u.includes("@") ? u : normPhone(u) ? phoneEmail(normPhone(u)) : `${u}@${STUDENT_DOMAIN}`;
       busy(btn, true, "جارٍ الدخول...");
       try { await signInWithEmailAndPassword(auth, email, f.p.value); }
       catch (err) { renderLogin(errMsg(err)); }
     };
     $("#forgot").onclick = async () => {
       const u = $("#loginForm").u.value.trim().toLowerCase();
-      if (!u.includes("@")) return renderLogin("اكتب بريدك الإلكتروني في الخانة أولاً، ثم اضغط «نسيت كلمة المرور». إذا كان حسابك من المعلم (بدون بريد) فتواصل معه.");
+      if (!u.includes("@")) return renderLogin("", "login", "لاستعادة كلمة المرور تواصل مع المعلم" + (SITE.contact ? " على " + SITE.contact : "") + "، وسيعيد تفعيل حسابك.");
       try { await sendPasswordResetEmail(auth, u); } catch (e) {}
       renderLogin("", "login", "إذا كان هذا البريد مسجلاً، فستصلك رسالة لتغيير كلمة المرور. تفقّد البريد غير المرغوب (Spam) أيضاً.");
     };
@@ -196,7 +208,7 @@ function renderLoginErrKeep(f, msg) {
 }
 function renderWaiting(st) {
   const msg = st.status === "pending"
-    ? ["⏳ طلبك قيد المراجعة", `أهلاً ${st.name}، تم تسجيلك في الصف «${st.className}». سيفعّل المعلم حسابك قريباً، ثم تستطيع الدخول بنفس البريد وكلمة المرور.`]
+    ? ["⏳ طلبك قيد المراجعة", `أهلاً ${st.name}، تم تسجيلك في الصف «${st.className}». سيفعّل المعلم حسابك قريباً، ثم تستطيع الدخول برقم هاتفك وكلمة المرور.`]
     : st.status === "rejected"
       ? ["لم تتم الموافقة على الطلب", "إذا كنت من طلاب المعلم، تواصل معه مباشرة."]
       : ["الحساب موقوف", "حسابك موقوف حالياً. تواصل مع المعلم."];
@@ -395,20 +407,20 @@ async function tStudents(main) {
     <div class="row"><button class="btn" id="print">🔗 رابط التسجيل للطلاب</button><button class="btn ghost" id="add">+ إضافة طالب يدوياً</button></div></div>
   ${pending.length ? `<div class="card" style="border-inline-start:5px solid var(--accent)">
     <div class="row" style="margin-bottom:6px"><h3 style="margin:0">طلبات انضمام جديدة (${pending.length})</h3><span class="spacer"></span><button class="btn sm" id="approveAll">قبول الكل</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>الاسم</th><th>الصف</th><th>البريد</th><th>وقت التسجيل</th><th></th></tr></thead><tbody>
-    ${pending.map((s) => `<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.className || "—")}</td><td class="ltr">${esc(s.email || "")}</td><td class="muted">${ago(s.createdAt)}</td>
+    <div class="tbl-wrap"><table><thead><tr><th>الاسم</th><th>الصف</th><th>رقم الهاتف</th><th>وقت التسجيل</th><th></th></tr></thead><tbody>
+    ${pending.map((s) => `<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.className || "—")}</td><td class="ltr">${esc(loginId(s))}</td><td class="muted">${ago(s.createdAt)}</td>
       <td style="white-space:nowrap"><button class="btn sm" data-approve="${s.id}">قبول ✓</button> <button class="btn link sm danger" data-reject="${s.id}">رفض</button></td></tr>`).join("")}
     </tbody></table></div></div>` : ""}
   <div class="card">
-    <div class="row" style="margin-bottom:8px"><h3 style="margin:0">الطلاب المقبولون</h3><span class="muted">(${students.length})</span><span class="spacer"></span><input type="text" id="sq" placeholder="بحث بالاسم أو البريد..." style="max-width:220px">${clsSelect("fc", sel, "كل الصفوف (أبطأ)")}</div>
+    <div class="row" style="margin-bottom:8px"><h3 style="margin:0">الطلاب المقبولون</h3><span class="muted">(${students.length})</span><span class="spacer"></span><input type="text" id="sq" placeholder="بحث بالاسم أو الرقم..." style="max-width:220px">${clsSelect("fc", sel, "كل الصفوف (أبطأ)")}</div>
     ${students.length ? `<div class="tbl-wrap"><table><thead><tr><th>الاسم</th><th>الصف</th><th>بيانات الدخول</th><th>الحالة</th><th>آخر دخول</th><th></th></tr></thead><tbody>
-    ${students.map((s) => `<tr data-n="${esc(s.name + " " + (s.email || s.username || ""))}"><td><b>${esc(s.name)}</b></td><td>${esc(s.className || "—")}</td>
-      <td class="ltr">${esc(s.email || s.username || "")}${credMap[s.id] ? ` <span class="pw" data-pw="${esc(credMap[s.id].password)}">••••</span> <button class="btn link sm" data-show>إظهار</button>` : ""}</td>
+    ${students.map((s) => `<tr data-n="${esc(s.name + " " + loginId(s))}"><td><b>${esc(s.name)}</b></td><td>${esc(s.className || "—")}</td>
+      <td class="ltr">${esc(loginId(s))}${credMap[s.id] ? ` <span class="pw" data-pw="${esc(credMap[s.id].password)}">••••</span> <button class="btn link sm" data-show>إظهار</button>` : ""}</td>
       <td>${s.active ? `<span class="pill ok">مفعّل</span>` : `<span class="pill bad">موقوف</span>`}</td><td class="muted">${ago(s.lastLogin)}</td>
       <td style="white-space:nowrap"><button class="btn link sm" data-edit="${s.id}">تعديل</button><button class="btn link sm ${s.active ? "danger" : ""}" data-toggle="${s.id}">${s.active ? "إيقاف" : "تفعيل"}</button><button class="btn link sm danger" data-del="${s.id}">حذف</button></td></tr>`).join("")}
   </tbody></table></div>` : `<div class="empty">لا يوجد طلاب مقبولون بعد. أرسل رابط المنصة لطلابك ليسجلوا، ثم اقبل طلباتهم من هنا.</div>`}</div>
   ${rejected.length ? `<details class="card"><summary class="muted" style="cursor:pointer">طلبات مرفوضة (${rejected.length})</summary>
-    ${rejected.map((s) => `<div class="item"><div class="body"><div class="t">${esc(s.name)}</div><div class="m"><span class="ltr">${esc(s.email || "")}</span> · ${esc(s.className || "")}</div></div><button class="btn ghost sm" data-approve="${s.id}">قبول</button><button class="btn link sm danger" data-del="${s.id}">حذف</button></div>`).join("")}</details>` : ""}`;
+    ${rejected.map((s) => `<div class="item"><div class="body"><div class="t">${esc(s.name)}</div><div class="m"><span class="ltr">${esc(loginId(s))}</span> · ${esc(s.className || "")}</div></div><button class="btn ghost sm" data-approve="${s.id}">قبول</button><button class="btn link sm danger" data-del="${s.id}">حذف</button></div>`).join("")}</details>` : ""}`;
 
   const approve = (id) => updateDoc(doc(db, "students", id), { active: true, status: "approved" });
   $$("[data-approve]", main).forEach((b) => (b.onclick = async () => { busy(b, true, "..."); await approve(b.dataset.approve); toast("تم قبول الطالب ✓"); route(); }));
@@ -467,8 +479,8 @@ async function tStudents(main) {
       <div id="print-area"><div class="login-slip" style="font-size:16px;line-height:2">
         <b style="font-size:20px">${esc(SITE.title)} — ${esc(SITE.teacher)}</b><br>
         1) افتح الرابط: <span class="ltr"><b>${esc(link)}</b></span><br>
-        2) اضغط «طالب جديد؟ أنشئ حساباً» واكتب اسمك الثلاثي وصفك وبريدك.<br>
-        3) انتظر موافقة المعلم، ثم ادخل بنفس البريد وكلمة المرور.<br>
+        2) اضغط «طالب جديد؟ أنشئ حساباً» واكتب اسمك الثلاثي وصفك ورقم هاتفك.<br>
+        3) انتظر موافقة المعلم، ثم ادخل برقم هاتفك وكلمة المرور.<br>
         <small>لا تشارك كلمة المرور مع أحد.${SITE.contact ? " للاستفسار: " + phone() : ""}</small></div></div>`);
     $("#copy").onclick = async () => { try { await navigator.clipboard.writeText(link); toast("تم نسخ الرابط ✓"); } catch { prompt("انسخ الرابط:", link); } };
     $("#doprint").onclick = () => window.print();
@@ -1389,7 +1401,7 @@ async function tReport(main, sid) {
   const at = attStats(sessions, sid); const absences = sessions.filter((x) => ["a", "l"].includes(x.records?.[sid]));
   const v = qrows.filter((r) => r.sc); const avg = v.length ? Math.round(v.reduce((a, r) => a + r.sc.pct, 0) / v.length) : null;
   main.innerHTML = `<div class="page-head no-print"><h1>تقرير طالب</h1><div class="row"><a class="btn ghost" href="#/reports">رجوع</a><button class="btn" id="pr">🖨 طباعة / PDF</button></div></div>
-  <div id="print-area"><div class="card report">${repHead(`تقرير الطالب: ${s.name}`)}<p class="muted">${esc(s.className || "")}${s.email ? ` · <span dir="ltr">${esc(s.email)}</span>` : ""}</p>
+  <div id="print-area"><div class="card report">${repHead(`تقرير الطالب: ${s.name}`)}<p class="muted">${esc(s.className || "")}${loginId(s) ? ` · <span dir="ltr">${esc(loginId(s))}</span>` : ""}</p>
     <div class="grid g4" style="margin:12px 0"><div class="stat"><div class="n">${avg == null ? "—" : avg + "%"}</div><div class="l">متوسط الاختبارات</div></div><div class="stat"><div class="n">${at.pct == null ? "—" : at.pct + "%"}</div><div class="l">نسبة الحضور</div></div>
       <div class="stat"><div class="n">${hw.filter((h) => aMap[h.assignmentId]).length}</div><div class="l">واجبات مسلّمة</div></div><div class="stat"><div class="n">${s.lessonsSeen || 0}</div><div class="l">دروس فتحها</div></div></div>
     <h3>الاختبارات</h3>${qrows.length ? `<table><thead><tr><th>الاختبار</th><th>الدرجة</th><th>التاريخ</th></tr></thead><tbody>${qrows.map((r) => `<tr><td>${esc(r.q.title)}</td><td>${r.sc ? `${r.sc.right} من ${r.sc.total} ${pctPill(r.sc.pct)}` : "—"}</td><td class="muted">${fmt(r.x.submittedAt, false)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">لا يوجد.</p>`}
