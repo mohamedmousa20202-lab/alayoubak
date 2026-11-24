@@ -1,0 +1,192 @@
+rules_version = '2';
+// ============================================================
+//  قواعد الأمان لمنصة أ / محمد موسى
+//  ⚠️ غيّر البريد في السطر التالي إلى بريدك أنت (نفس البريد في config.js)
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function teacherEmail() { return 'mohamedmousa20202@gmail.com'; }
+
+    function signedIn()  { return request.auth != null; }
+    function isTeacher() { return signedIn() && request.auth.token.email == teacherEmail(); }
+    function uid()       { return request.auth.uid; }
+    function studentPath(id) { return /databases/$(database)/documents/students/$(id); }
+    // طالب مسجَّل من قِبل المعلم وحسابه مفعّل
+    function isStudent() {
+      return signedIn() && exists(studentPath(uid())) && get(studentPath(uid())).data.active == true;
+    }
+    function keysOnly(list) { return request.resource.data.keys().hasOnly(list); }
+    function changedOnly(list) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(list); }
+
+    // ---------- الطلاب ----------
+    match /students/{sid} {
+      allow read: if isTeacher() || (signedIn() && sid == uid());
+      allow delete: if isTeacher();
+      // التسجيل الذاتي: الطالب ينشئ ملفه مرة واحدة، ويبقى موقوفاً حتى يوافق المعلم
+      allow create: if isTeacher()
+        || (signedIn() && sid == uid() && !isTeacher()
+            && keysOnly(['name', 'className', 'email', 'active', 'status', 'createdAt'])
+            && request.resource.data.active == false
+            && request.resource.data.status == 'pending'
+            && request.resource.data.createdAt == request.time
+            && request.resource.data.name is string
+            && request.resource.data.name.size() >= 3 && request.resource.data.name.size() <= 60
+            && request.resource.data.className is string && request.resource.data.className.size() <= 40
+            && request.resource.data.email == request.auth.token.email);
+      allow update: if isTeacher()
+        || (isStudent() && sid == uid() && changedOnly(['lastLogin']) && request.resource.data.lastLogin == request.time);
+    }
+
+    // كلمات المرور المحفوظة – للمعلم فقط
+    match /credentials/{sid} {
+      allow read, write: if isTeacher();
+    }
+
+    // ---------- الدروس / الإعلانات / الواجبات ----------
+    match /lessons/{id} {
+      allow read: if isTeacher() || (isStudent() && resource.data.published == true);
+      allow write: if isTeacher();
+    }
+    match /announcements/{id} {
+      allow read: if isTeacher() || isStudent();
+      allow write: if isTeacher();
+    }
+    match /assignments/{id} {
+      allow read: if isTeacher() || (isStudent() && resource.data.published == true);
+      allow write: if isTeacher();
+    }
+
+    // فهرس المحتوى المنشور (يبنيه المعلم تلقائياً عند كل حفظ)
+    match /meta/{id} {
+      allow read: if isTeacher() || isStudent();
+      allow write: if isTeacher();
+    }
+
+    // بنك الأسئلة والمختبر: يراه الطالب إذا نُشر
+    match /banks/{id} {
+      allow read: if isTeacher() || (isStudent() && resource.data.published == true);
+      allow write: if isTeacher();
+    }
+    match /labs/{id} {
+      allow read: if isTeacher() || (isStudent() && resource.data.published == true);
+      allow write: if isTeacher();
+    }
+    // مواعيد التقويم
+    match /events/{id} {
+      allow read: if isTeacher() || isStudent();
+      allow write: if isTeacher();
+    }
+    // الحضور: للمعلم فقط
+    match /attendance/{id} {
+      allow read, write: if isTeacher();
+    }
+
+    // ---------- الاختبارات ----------
+    // الأسئلة بدون الإجابات
+    match /quizzes/{qid} {
+      allow read: if isTeacher() || (isStudent() && resource.data.published == true);
+      allow write: if isTeacher();
+    }
+    // مفتاح الإجابات: لا يراه الطالب إلا بعد التسليم وإذا سمح المعلم بعرض النتائج
+    match /quizKeys/{qid} {
+      allow read: if isTeacher()
+        || (isStudent()
+            && exists(/databases/$(database)/documents/submissions/$(qid + '_' + uid()))
+            && get(/databases/$(database)/documents/quizzes/$(qid)).data.showResults == true);
+      allow write: if isTeacher();
+    }
+    // تسليمات الاختبارات: مرة واحدة فقط، ولا يمكن للطالب تعديلها.
+    // الطالب يرسل إجاباته فقط؛ الدرجة يحسبها المنصة عند المعلم من مفتاح الإجابات.
+    match /submissions/{subId} {
+      allow read: if isTeacher() || (isStudent() && (resource == null || resource.data.studentId == uid()));
+      allow create: if isStudent()
+        && keysOnly(['quizId', 'studentId', 'className', 'picks', 'scored', 'submittedAt'])
+        && request.resource.data.studentId == uid()
+        && request.resource.data.className == get(studentPath(uid())).data.className
+        && subId == request.resource.data.quizId + '_' + uid()
+        && request.resource.data.picks is map
+        && request.resource.data.picks.size() <= 200
+        && request.resource.data.scored == false
+        && request.resource.data.submittedAt == request.time
+        && get(/databases/$(database)/documents/quizzes/$(request.resource.data.quizId)).data.published == true
+        && get(/databases/$(database)/documents/quizzes/$(request.resource.data.quizId)).data.open == true;
+      allow update, delete: if isTeacher();   // الاحتساب، أو السماح بإعادة الحل
+    }
+
+    // ---------- مشاهدات الدروس (للمتابعة) ----------
+    match /views/{vid} {
+      allow read: if isTeacher() || (isStudent() && (resource == null || resource.data.studentId == uid()));
+      allow create: if isStudent()
+        && keysOnly(['lessonId', 'studentId', 'viewedAt', 'counted'])
+        && request.resource.data.studentId == uid()
+        && vid == request.resource.data.lessonId + '_' + uid()
+        && request.resource.data.counted == false
+        && request.resource.data.viewedAt == request.time;
+      allow update, delete: if isTeacher();
+    }
+
+    // ---------- تسليم الواجبات ----------
+    match /homework/{hid} {
+      allow read: if isTeacher() || (isStudent() && (resource == null || resource.data.studentId == uid()));
+      allow create: if isStudent()
+        && keysOnly(['assignmentId', 'studentId', 'text', 'link', 'submittedAt', 'graded', 'counted'])
+        && request.resource.data.studentId == uid()
+        && hid == request.resource.data.assignmentId + '_' + uid()
+        && request.resource.data.graded == false && request.resource.data.counted == false
+        && hwTextOk()
+        && get(/databases/$(database)/documents/assignments/$(request.resource.data.assignmentId)).data.published == true;
+      // يعدّل الطالب تسليمه ما دام المعلم لم يصححه بعد
+      allow update: if isTeacher()
+        || (isStudent() && resource.data.studentId == uid()
+            && resource.data.graded == false
+            && changedOnly(['text', 'link', 'submittedAt'])
+            && hwTextOk());
+      allow delete: if isTeacher();
+      function hwTextOk() {
+        return request.resource.data.text is string && request.resource.data.text.size() <= 5000
+          && request.resource.data.link is string && request.resource.data.link.size() <= 500
+          && request.resource.data.submittedAt == request.time;
+      }
+    }
+
+    // ---------- الرسائل الخاصة (طالب ↔ معلم) ----------
+    // teacherUnread / studentUnread: علامة «رسالة جديدة» لكل طرف
+    match /threads/{sid} {
+      allow read: if isTeacher() || (isStudent() && sid == uid());
+      allow create: if isTeacher()
+        || (isStudent() && sid == uid()
+            && keysOnly(['lastAt', 'lastFrom', 'lastText', 'teacherUnread'])
+            && studentLastOk());
+      allow update: if isTeacher()
+        || (isStudent() && sid == uid()
+            && changedOnly(['lastAt', 'lastFrom', 'lastText', 'teacherUnread', 'studentUnread'])
+            && request.resource.data.get('studentUnread', false) == false
+            && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['lastAt', 'lastFrom', 'lastText', 'teacherUnread'])
+                || studentLastOk()));
+      allow delete: if isTeacher();
+      function studentLastOk() {
+        return request.resource.data.lastFrom == 'student'
+          && request.resource.data.teacherUnread == true
+          && request.resource.data.lastAt == request.time
+          && request.resource.data.lastText is string && request.resource.data.lastText.size() <= 120;
+      }
+      match /msgs/{mid} {
+        allow read: if isTeacher() || (isStudent() && sid == uid());
+        allow create: if isTeacher()
+          || (isStudent() && sid == uid()
+              && keysOnly(['from', 'text', 'at'])
+              && request.resource.data.from == 'student'
+              && request.resource.data.text is string
+              && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+              && request.resource.data.at == request.time);
+        allow update, delete: if isTeacher();
+      }
+    }
+
+    // أي شيء آخر ممنوع
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
