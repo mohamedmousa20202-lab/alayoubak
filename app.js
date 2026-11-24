@@ -87,10 +87,15 @@ function driveEmbed(u) { const m = String(u).match(/drive\.google\.com\/file\/d\
 const chem = (e) => e
   .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
   .replace(/[^\s<>]*[_^][^\s<>]*/g, (t) => "⁦" + t.replace(/_(\d+)/g, "<sub>$1</sub>").replace(/\^(\d*[+\-]|\d+)/g, "<sup>$1</sup>") + "⁩");
+// المعادلات والأرقام اللاتينية داخل النص العربي تُعزل يساراً←يميناً حتى لا ينقلب ترتيبها (Ag⁺ + e⁻ → Ag)
+const ltrRuns = (e) => e.replace(/[A-Za-z0-9+\-−(\[|][^\u0600-\u06FF،؛؟]*[A-Za-z0-9)\]+\-−°|]/g, (r) => (/[\s→|=]/.test(r) || /^[+\-−]/.test(r) ? "\u2066" + r + "\u2069" : r));
 function inline(s) {
   return String(s ?? "").split(/(https:\/\/[^\s]+)/g)
-    .map((part, i) => (i % 2 ? `<a href="${esc(part)}" target="_blank" rel="noopener">${esc(part)}</a>` : chem(esc(part)))).join("");
+    .map((part, i) => (i % 2 ? `<a href="${esc(part)}" target="_blank" rel="noopener">${esc(part)}</a>` : chem(ltrRuns(esc(part))))).join("");
 }
+// نص السؤال: أسطر متعددة + صورة اختيارية (رابط https أو صورة داخل مجلد images في المنصة)
+const imgSrc = (u) => { const v = String(u || "").trim(); return /^https:\/\//i.test(v) || /^images\/[\w.\-]+$/i.test(v) ? v : ""; };
+const qText = (q) => String(q.text || "").split("\n").map((l) => inline(l)).join("<br>") + (imgSrc(q.image) ? `<div class="qimg"><img src="${esc(imgSrc(q.image))}" alt="" loading="lazy"></div>` : "");
 function rich(text) {
   return String(text || "").split("\n").map((line) => {
     const L = line.trim();
@@ -279,8 +284,9 @@ const go = (h) => { if (location.hash === "#/" + h) route(); else location.hash 
 const answersOf = (sub, n) => Array.from({ length: n }, (_, i) => (sub?.picks && sub.picks[i] != null ? sub.picks[i] : -1));
 function scoreOf(sub, key) {
   if (!sub || !key) return null;
-  const total = key.answers.length, a = answersOf(sub, total); let right = 0;
-  key.answers.forEach((k, i) => { if (a[i] === k) right++; });
+  const n = key.answers.length, a = answersOf(sub, n), pts = key.points || [];
+  let right = 0, total = 0;
+  key.answers.forEach((k, i) => { const p = +pts[i] || 1; total += p; if (a[i] === k) right += p; });
   return { right, total, pct: total ? Math.round((right / total) * 100) : 0 };
 }
 // تحديث ملخص كل طالب: يقرأ فقط السجلات الجديدة (كل سجل يُقرأ مرة واحدة فقط)
@@ -302,7 +308,7 @@ async function rebuildCatalog() {
   const pick = (o, ks) => Object.fromEntries(ks.filter((k) => o[k] !== undefined && o[k] !== null).map((k) => [k, o[k]]));
   await setDoc(doc(db, "meta", "catalog"), {
     lessons: l.filter((x) => x.published).map((x) => ({ ...pick(x, ["id", "title", "unit", "order", "classes", "createdAt"]), v: !!x.videoUrl, p: !!x.pdfUrl })),
-    quizzes: q.filter((x) => x.published).map((x) => pick(x, ["id", "title", "count", "classes", "open", "showResults", "createdAt"])),
+    quizzes: q.filter((x) => x.published).map((x) => pick(x, ["id", "title", "count", "classes", "open", "showResults", "timeLimit", "totalPoints", "createdAt"])),
     assignments: a.filter((x) => x.published).map((x) => pick(x, ["id", "title", "due", "maxGrade", "classes", "createdAt"])),
     announcements: an.sort(byDate).slice(0, 30).map((x) => pick(x, ["id", "title", "body", "classes", "createdAt"])),
     banks: bk.filter((x) => x.published).map((x) => pick(x, ["id", "title", "unit", "count", "classes", "createdAt"])),
@@ -529,13 +535,15 @@ function parseBulk(text) {
   const out = [];
   for (const block of text.split(/\n\s*\n/)) {
     const lines = block.split("\n").map((l) => l.trim()).filter(Boolean); if (!lines.length) continue;
-    const q = { text: "", options: [], answer: -1, explanation: "" };
+    const q = { text: "", options: [], answer: -1, explanation: "", image: "", points: 1 };
     for (const line of lines) {
       let m;
       if ((m = line.match(/^(?:الإجابة|الاجابة|الجواب|answer)\s*[:：]\s*(\S+)/i))) { const k = m[1].replace(/[).\-]/g, "").toLowerCase(); if (k in map) q.answer = map[k]; }
       else if ((m = line.match(/^(?:الشرح|التفسير|explanation)\s*[:：]\s*(.+)/i))) q.explanation = m[1];
+      else if ((m = line.match(/^(?:الدرجة|درجة|الدرجات|points?)\s*[:：]\s*(\d+(?:\.\d+)?)/i))) q.points = +m[1];
+      else if ((m = line.match(/^(?:صورة|img|image)\s*[:：]\s*(\S+)/i)) && !q.options.length) q.image = m[1];
       else if ((m = line.match(/^(\*)?\s*(هـ|أ|ا|ب|ج|د|ه|و|[a-fA-F])\s*[)\-.:]\s*(.+)$/)) && q.text) { if (m[1]) q.answer = q.options.length; q.options.push(m[3].trim()); }
-      else if (!q.options.length) q.text += (q.text ? " " : "") + line.replace(/^(?:س\s*\d*\s*[:：\-.)]|\d+\s*[\-.)]|q\d*[:.)])\s*/i, "");
+      else if (!q.options.length) q.text += (q.text ? "\n" : "") + (q.text ? line : line.replace(/^(?:س\s*\d*\s*[:：\-.)]|\d+\s*[\-.)]|q\d*[:.)])\s*/i, ""));
     }
     if (q.text && q.options.length >= 2) out.push(q);
   }
@@ -543,12 +551,12 @@ function parseBulk(text) {
 }
 async function tQuizEdit(main, id) {
   const isNew = id === "new";
-  let q = { title: "", description: "", classes: [], published: false, open: true, showResults: true };
-  let questions = [{ text: "", options: ["", "", "", ""], answer: 0, explanation: "" }];
+  let q = { title: "", description: "", classes: [], published: false, open: true, showResults: true, timeLimit: 0, shuffle: false };
+  let questions = [{ text: "", options: ["", "", "", ""], answer: 0, explanation: "", image: "", points: 1 }];
   if (!isNew) {
     const [qs, ks] = await Promise.all([getDoc(doc(db, "quizzes", id)), getDoc(doc(db, "quizKeys", id))]);
     if (!qs.exists()) return go("quizzes"); q = { ...q, ...qs.data() }; const key = ks.exists() ? ks.data() : { answers: [], explanations: [] };
-    questions = (q.questions || []).map((x, i) => ({ text: x.text, options: x.options, answer: key.answers[i] ?? 0, explanation: key.explanations?.[i] || "" }));
+    questions = (q.questions || []).map((x, i) => ({ text: x.text, options: x.options, image: x.image || "", points: x.points || 1, answer: key.answers[i] ?? 0, explanation: key.explanations?.[i] || "" }));
   }
   main.innerHTML = `<div class="page-head"><h1>${isNew ? "اختبار جديد" : "تعديل الاختبار"}</h1><div class="row">${isNew ? "" : `<a class="btn ghost" href="#/quiz-results/${id}">النتائج</a>`}<a class="btn ghost" href="#/quizzes">رجوع</a></div></div>
   <form id="qf">
@@ -556,6 +564,9 @@ async function tQuizEdit(main, id) {
     <div class="field"><label>عنوان الاختبار</label><input type="text" name="title" value="${esc(q.title)}" required></div>
     <div class="field"><label>تعليمات (اختياري)</label><input type="text" name="desc" value="${esc(q.description)}"></div>
     ${classPicker(q.classes)}
+    <div class="grid g3"><div class="field"><label>زمن الاختبار بالدقائق <span class="muted">(0 = بدون وقت)</span></label><input type="number" name="time" min="0" max="600" value="${q.timeLimit || 0}"></div>
+      <div class="field"><label>الدرجة الكلية</label><input type="text" id="totpts" disabled></div>
+      <div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" name="shuffle" ${q.shuffle ? "checked" : ""}> ترتيب عشوائي للأسئلة لكل طالب</label></div></div>
     <div class="row" style="gap:22px"><label class="check"><input type="checkbox" name="pub" ${q.published ? "checked" : ""}> نشر للطلاب</label>
       <label class="check"><input type="checkbox" name="open" ${q.open ? "checked" : ""}> مفتوح لاستقبال الإجابات</label>
       <label class="check"><input type="checkbox" name="show" ${q.showResults ? "checked" : ""}> يرى الطالب درجته والحلول بعد التسليم</label></div>
@@ -566,10 +577,13 @@ async function tQuizEdit(main, id) {
   </form>`;
 
   const draw = () => {
-    $("#qc").textContent = questions.length;
+    $("#qc").textContent = questions.length; $("#totpts").value = questions.reduce((a, x) => a + (+x.points || 1), 0) + " درجة";
     $("#qs").innerHTML = questions.map((x, i) => `<div class="qedit" data-i="${i}">
       <div class="row" style="margin-bottom:8px"><b>سؤال ${i + 1}</b><span class="spacer"></span><button type="button" class="btn link sm" data-up="${i}">↑</button><button type="button" class="btn link sm" data-dn="${i}">↓</button><button type="button" class="btn link sm danger" data-rm="${i}">حذف</button></div>
-      <textarea data-f="text" style="min-height:60px" placeholder="نص السؤال">${esc(x.text)}</textarea>
+      <textarea data-f="text" style="min-height:60px" placeholder="نص السؤال (يمكن كتابة أكثر من سطر)">${esc(x.text)}</textarea>
+      <div class="row" style="margin-top:6px;flex-wrap:nowrap"><label style="margin:0;white-space:nowrap">الدرجة</label><input type="number" data-f="points" min="0.5" step="0.5" value="${x.points || 1}" style="width:80px">
+        <input type="text" data-f="image" dir="ltr" value="${esc(x.image || "")}" placeholder="رابط صورة للسؤال (اختياري) https://..." style="flex:1"></div>
+      ${imgSrc(x.image) ? `<div class="qimg" style="margin-top:6px"><img src="${esc(imgSrc(x.image))}" alt=""></div>` : ""}
       <p class="hint" style="margin:6px 0">اختر الدائرة بجانب الإجابة الصحيحة:</p>
       <div class="opts">${x.options.map((o, j) => `<input type="radio" name="ans${i}" value="${j}" ${x.answer === j ? "checked" : ""} style="accent-color:var(--ok);width:18px;height:18px">
         <div class="row" style="flex-wrap:nowrap"><input type="text" data-o="${j}" value="${esc(o)}" placeholder="الخيار ${LETTERS[j]}">${x.options.length > 2 ? `<button type="button" class="btn link sm danger" data-ro="${j}">✕</button>` : ""}</div>`).join("")}</div>
@@ -579,6 +593,7 @@ async function tQuizEdit(main, id) {
   };
   const sync = () => $$(".qedit").forEach((el) => {
     const x = questions[+el.dataset.i]; x.text = $('[data-f=text]', el).value; x.explanation = $('[data-f=explanation]', el).value;
+    x.points = +$('[data-f=points]', el).value || 1; x.image = $('[data-f=image]', el).value.trim();
     x.options = $$("[data-o]", el).map((i) => i.value); const r = $(`input[name=ans${el.dataset.i}]:checked`, el); x.answer = r ? +r.value : 0;
   });
   draw();
@@ -591,7 +606,8 @@ async function tQuizEdit(main, id) {
     else if (b.dataset.ro != null) { const j = +b.dataset.ro; questions[qi].options.splice(j, 1); if (questions[qi].answer >= questions[qi].options.length) questions[qi].answer = 0; else if (questions[qi].answer > j) questions[qi].answer--; }
     draw();
   };
-  $("#addq").onclick = () => { sync(); questions.push({ text: "", options: ["", "", "", ""], answer: 0, explanation: "" }); draw(); $$(".qedit").pop().scrollIntoView({ behavior: "smooth" }); };
+  $("#qs").onchange = () => { sync(); $("#totpts").value = questions.reduce((a, x) => a + (+x.points || 1), 0) + " درجة"; };
+  $("#addq").onclick = () => { sync(); questions.push({ text: "", options: ["", "", "", ""], answer: 0, explanation: "", image: "", points: 1 }); draw(); $$(".qedit").pop().scrollIntoView({ behavior: "smooth" }); };
   $("#paste").onclick = () => {
     openModal(`<h2>لصق أسئلة جاهزة</h2><p class="muted">اكتب أو الصق الأسئلة بهذا الشكل، مع ترك سطر فارغ بين كل سؤال والآخر:</p>
       <pre style="background:#f4f6fa;padding:10px;border-radius:10px;font-family:inherit;white-space:pre-wrap">1- ما عدد مولات الأكسجين في 32 g من O_2 ؟
@@ -600,7 +616,8 @@ async function tQuizEdit(main, id) {
 ج) 2
 د) 4
 الإجابة: ب
-الشرح: الكتلة المولية لـ O_2 = 32 g/mol</pre>
+الدرجة: 3
+الشرح: الكتلة المولية لـ O_2 = 32 g/mol</pre><p class="hint">اختياري: سطر «الدرجة: 4» لدرجة السؤال، وسطر «صورة: رابط» لإرفاق صورة.</p>
       <textarea id="bulkq" style="min-height:220px"></textarea><div id="perr"></div>
       <div class="row"><button class="btn" id="doparse">إضافة الأسئلة</button><button class="btn ghost" data-close>إلغاء</button></div>`);
     $("#doparse").onclick = () => {
@@ -618,9 +635,11 @@ async function tQuizEdit(main, id) {
     if (!clean.length) return toast("أضف سؤالاً واحداً على الأقل");
     if (bad >= 0) { toast(`أكمل نص السؤال ${bad + 1} وجميع خياراته`); $$(".qedit")[bad].scrollIntoView({ behavior: "smooth" }); return; }
     busy($("#save"), true);
+    const points = clean.map((x) => +x.points || 1);
     const pub = { title: f.title.value.trim(), description: f.desc.value.trim(), classes: pickedClasses(f), published: f.pub.checked, open: f.open.checked, showResults: f.show.checked,
-      questions: clean.map((x) => ({ text: x.text, options: x.options })), count: clean.length };
-    const key = { answers: clean.map((x) => x.answer), explanations: clean.map((x) => x.explanation.trim()) };
+      timeLimit: Math.max(0, Math.round(+f.time.value || 0)), shuffle: f.shuffle.checked, totalPoints: points.reduce((a, b) => a + b, 0),
+      questions: clean.map((x, i) => ({ text: x.text, options: x.options, points: points[i], ...(x.image ? { image: x.image } : {}) })), count: clean.length };
+    const key = { answers: clean.map((x) => x.answer), explanations: clean.map((x) => x.explanation.trim()), points };
     try {
       let qid = id;
       if (isNew) { const r = doc(collection(db, "quizzes")); qid = r.id; pub.createdAt = serverTimestamp(); }
@@ -631,7 +650,7 @@ async function tQuizEdit(main, id) {
   if (!isNew) $("#del").onclick = async () => {
     if (!confirm("حذف الاختبار وجميع إجابات الطلاب عليه؟")) return;
     const subs = await list(query(col("submissions"), where("quizId", "==", id)));
-    await commitChunks(subs.flatMap((x) => [(b) => b.delete(doc(db, "submissions", x.id)), ...undoSub(x)]));
+    await commitChunks(subs.flatMap((x) => [(b) => b.delete(doc(db, "submissions", x.id)), (b) => b.delete(doc(db, "starts", x.id)), ...undoSub(x)]));
     const b = writeBatch(db); b.delete(doc(db, "quizzes", id)); b.delete(doc(db, "quizKeys", id)); await b.commit();
     await rebuildCatalog(); toast("تم الحذف"); go("quizzes");
   };
@@ -657,25 +676,24 @@ async function tQuizResults(main, id) {
     ${rows.map((r) => `<tr data-n="${esc(r.s.name)}"><td><b>${esc(r.s.name)}</b></td><td>${esc(r.s.className || "")}</td><td>${r.sc.right} من ${r.sc.total}</td><td>${pctPill(r.sc.pct)}</td><td class="muted">${fmt(r.x.submittedAt)}</td>
     <td style="white-space:nowrap"><button class="btn link sm" data-view="${r.x.id}">الإجابات</button><button class="btn link sm danger" data-redo="${r.x.id}">السماح بإعادة الحل</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">لا توجد تسليمات بعد.</p>`}</div>
   ${missing.length ? `<details class="card"><summary style="cursor:pointer"><b>لم يسلّموا بعد (${missing.length})</b></summary><div class="row" style="margin-top:10px">${missing.map((s) => `<span class="pill gray">${esc(s.name)}</span>`).join("")}</div></details>` : ""}
-  ${subs.length ? `<div class="card"><h3>تحليل الأسئلة — نسبة الإجابات الصحيحة</h3>${(q.questions || []).map((qq, i) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--brand-soft);color:var(--brand);font-size:13px">${i + 1}</span><span style="flex:1">${inline(qq.text)}</span>${pctPill(qStats[i])}</div>`).join("")}</div>` : ""}`;
+  ${subs.length ? `<div class="card"><h3>تحليل الأسئلة — نسبة الإجابات الصحيحة</h3>${(q.questions || []).map((qq, i) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--brand-soft);color:var(--brand);font-size:13px">${i + 1}</span><span style="flex:1">${inline(String(qq.text).split("\n")[0])}</span>${pctPill(qStats[i])}</div>`).join("")}</div>` : ""}`;
 
   $("#tog").onclick = async () => { await updateDoc(doc(db, "quizzes", id), { open: !q.open }); await rebuildCatalog(); toast(q.open ? "تم إغلاق الاختبار" : "تم فتح الاختبار"); route(); };
   if ($("#sq")) $("#sq").oninput = (e) => $$("tbody tr[data-n]", main).forEach((tr) => tr.classList.toggle("hidden", !tr.dataset.n.includes(e.target.value.trim())));
   $$("[data-redo]", main).forEach((b) => (b.onclick = async () => {
     if (!confirm("حذف إجابة هذا الطالب ليتمكن من حل الاختبار مرة أخرى؟")) return;
     const x = subs.find((y) => y.id === b.dataset.redo);
-    await commitChunks([(wb) => wb.delete(doc(db, "submissions", x.id)), ...undoSub(x)]); toast("يمكن للطالب إعادة الحل الآن"); route();
+    await commitChunks([(wb) => wb.delete(doc(db, "submissions", x.id)), (wb) => wb.delete(doc(db, "starts", x.id)), ...undoSub(x)]); toast("يمكن للطالب إعادة الحل الآن"); route();
   }));
   $$("[data-view]", main).forEach((b) => (b.onclick = () => { const r = rows.find((r) => r.x.id === b.dataset.view); openModal(`<h2>${esc(r.s.name)} — ${r.sc.right} من ${r.sc.total}</h2>${reviewHTML(q, key, answersOf(r.x, n))}<button class="btn ghost" data-close>إغلاق</button>`); }));
   $("#csv").onclick = () => downloadCSV(`نتائج-${q.title}`, [["الطالب", "الصف", "الدرجة", "من", "النسبة %", "وقت التسليم"], ...rows.map((r) => [r.s.name, r.s.className, r.sc.right, r.sc.total, r.sc.pct, ts(r.x.submittedAt)?.toLocaleString("ar-AE")]), ...missing.map((s) => [s.name, s.className, "لم يسلّم", "", "", ""])]);
 }
 function reviewHTML(q, key, answers) {
-  return (q.questions || []).map((qq, i) => `<div class="q"><div class="qt"><span class="qn">${i + 1}</span>${inline(qq.text)}</div>
-    ${qq.options.map((o, j) => `<div class="opt ${j === key.answers[i] ? "right" : answers[i] === j ? "wrong" : ""}">${j === key.answers[i] ? "✔" : answers[i] === j ? "✘" : "○"} ${LETTERS[j]}) ${inline(o)}</div>`).join("")}
+  return (q.questions || []).map((qq, i) => `<div class="q"><div class="qt"><span class="qn">${i + 1}</span><div style="flex:1">${qText(qq)}</div>${qq.points ? `<span class="pts">${qq.points} درجات</span>` : ""}</div>
+    ${qq.options.map((o, j) => `<div class="opt ${j === key.answers[i] ? "right" : answers[i] === j ? "wrong" : ""}">${j === key.answers[i] ? "✔" : answers[i] === j ? "✘" : "○"} ${"ABCDEF"[j]}) ${inline(o)}</div>`).join("")}
     ${answers[i] == null || answers[i] < 0 ? `<p class="hint">لم تتم الإجابة على هذا السؤال</p>` : ""}
     ${key.explanations?.[i] ? `<div class="expl">💡 ${inline(key.explanations[i])}</div>` : ""}</div>`).join("");
 }
-
 // ---------- الواجبات ----------
 async function tAssignments(main) {
   const as = (await all("assignments")).sort(byDate);
@@ -819,13 +837,13 @@ async function sLesson(main, id) {
 async function sQuizzes(main) {
   const [quizzes, subs] = await Promise.all([pubQ("quizzes"), myQ("submissions")]); quizzes.sort(byDate);
   main.innerHTML = `<div class="page-head"><h1>الاختبارات</h1></div><div class="card">${quizzes.map((q) => { const done = subs.find((s) => s.quizId === q.id);
-    return `<div class="item clickable" onclick="location.hash='#/quiz/${q.id}'"><div class="ic">📝</div><div class="body"><div class="t">${esc(q.title)}</div><div class="m">${q.count} سؤال</div></div>
+    return `<div class="item clickable" onclick="location.hash='#/quiz/${q.id}'"><div class="ic">📝</div><div class="body"><div class="t">${esc(q.title)}</div><div class="m">${q.count} سؤال${q.timeLimit ? ` · ⏱ ${q.timeLimit} دقيقة` : ""}${q.totalPoints ? ` · ${q.totalPoints} درجة` : ""}</div></div>
     ${done ? `<span class="pill ok">تم التسليم</span>` : q.open ? `<span class="btn sm">ابدأ</span>` : `<span class="pill gray">مغلق</span>`}</div>`; }).join("") || `<div class="empty">لا توجد اختبارات.</div>`}</div>`;
 }
 async function sQuiz(main, id) {
   const qs = await getDoc(doc(db, "quizzes", id)); if (!qs.exists()) return go("quizzes"); const q = qs.data();
   const sub = (await myQ("submissions")).find((s) => s.quizId === id);
-  const head = `<div class="page-head"><div><h1>${esc(q.title)}</h1><p class="sub">${q.count} سؤال${q.description ? " · " + esc(q.description) : ""}</p></div><a class="btn ghost" href="#/quizzes">رجوع</a></div>`;
+  const head = `<div class="page-head"><div><h1>${esc(q.title)}</h1><p class="sub">${q.count} سؤال${q.totalPoints ? ` · ${q.totalPoints} درجة` : ""}${q.timeLimit ? ` · ${q.timeLimit} دقيقة` : ""}</p></div><a class="btn ghost" href="#/quizzes">رجوع</a></div>`;
   if (sub) {
     if (!q.showResults) { main.innerHTML = head + `<div class="card empty">✅ تم تسليم إجاباتك بتاريخ ${fmt(sub.submittedAt)}.<br>سيعلن المعلم النتائج لاحقاً.</div>`; return; }
     const ks = await getDoc(doc(db, "quizKeys", id)); const key = ks.data(); const sc = scoreOf(sub, key);
@@ -833,21 +851,103 @@ async function sQuiz(main, id) {
     return;
   }
   if (!q.open) { main.innerHTML = head + `<div class="card empty">هذا الاختبار مغلق حالياً.</div>`; return; }
-  const draftKey = `quiz-draft-${id}-${S.me.id}`; let draft = {}; try { draft = JSON.parse(localStorage.getItem(draftKey) || "{}"); } catch {}
-  main.innerHTML = head + `<form id="tf">${q.questions.map((qq, i) => `<div class="q"><div class="qt"><span class="qn">${i + 1}</span>${inline(qq.text)}</div>
-    ${qq.options.map((o, j) => `<label class="opt"><input type="radio" name="a${i}" value="${j}" ${draft[i] === j ? "checked" : ""}> ${LETTERS[j]}) ${inline(o)}</label>`).join("")}</div>`).join("")}
-    <div class="card row"><span id="prog" class="muted"></span><span class="spacer"></span><button class="btn">تسليم الإجابات</button></div></form>`;
-  const f = $("#tf"); const answers = () => q.questions.map((_, i) => { const r = $(`input[name=a${i}]:checked`, f); return r ? +r.value : -1; });
-  const upd = () => { const a = answers(); $("#prog").textContent = `أجبت على ${a.filter((x) => x >= 0).length} من ${a.length}`; try { localStorage.setItem(draftKey, JSON.stringify(Object.fromEntries(a.map((x, i) => [i, x])))); } catch {} };
-  f.onchange = upd; upd();
-  f.onsubmit = async (e) => {
-    e.preventDefault(); const a = answers(); const left = a.filter((x) => x < 0).length;
-    if (!confirm(left ? `لم تجب على ${left} سؤال. هل تريد التسليم؟ لا يمكن التعديل بعد التسليم.` : "تسليم الإجابات؟ لا يمكن التعديل بعد التسليم.")) return;
-    busy($("button", f), true, "جارٍ التسليم...");
-    const picks = Object.fromEntries(a.map((x, i) => [String(i), x]).filter(([, x]) => x >= 0));
-    try { await setDoc(doc(db, "submissions", `${id}_${S.me.id}`), { quizId: id, studentId: S.me.id, className: S.me.className || "", picks, scored: false, submittedAt: serverTimestamp() }); try { localStorage.removeItem(draftKey); } catch {} toast("تم التسليم ✓"); route(); }
-    catch (err) { busy($("button", f), false); toast(errMsg(err)); }
+  const N = q.questions.length, total = q.totalPoints || N;
+  const startRef = doc(db, "starts", `${id}_${S.me.id}`);
+  let started = null; try { const st = await getDoc(startRef); if (st.exists()) started = ts(st.data().startedAt); } catch {}
+  const intro = () => {
+    main.innerHTML = head + `<div class="card exam-intro">
+      <div class="grid g4" style="margin-bottom:14px">
+        <div class="stat"><div class="n">${N}</div><div class="l">عدد الأسئلة</div></div>
+        <div class="stat"><div class="n">${total}</div><div class="l">الدرجة الكلية</div></div>
+        <div class="stat"><div class="n">${q.timeLimit ? q.timeLimit + " د" : "مفتوح"}</div><div class="l">زمن الاختبار</div></div>
+        <div class="stat"><div class="n">مرة واحدة</div><div class="l">عدد المحاولات</div></div></div>
+      ${q.description ? `<p>${esc(q.description)}</p>` : ""}
+      <ul class="rules"><li>يظهر سؤال واحد في كل مرة، وتتنقل بين الأسئلة بأزرار «التالي» و«السابق» أو من لوحة الأسئلة.</li>
+        <li>يمكنك وضع علامة 🚩 على أي سؤال للعودة إليه قبل التسليم.</li>
+        ${q.timeLimit ? `<li>يبدأ العدّ التنازلي عند الضغط على «ابدأ الاختبار»، ولا يتوقف إذا أغلقت الصفحة. عند انتهاء الوقت تُسلَّم إجاباتك تلقائياً.</li>` : ""}
+        <li>إجاباتك تُحفظ على جهازك أثناء الحل، ولا يمكن تعديلها بعد التسليم النهائي.</li></ul>
+      <div class="row"><span class="spacer"></span><button class="btn" id="go" style="padding:13px 34px;font-size:17px">${started ? "متابعة الاختبار" : "ابدأ الاختبار"}</button></div></div>`;
+    $("#go").onclick = async (e) => {
+      busy(e.target, true);
+      if (!started) { try { await setDoc(startRef, { quizId: id, studentId: S.me.id, startedAt: serverTimestamp() }); const st = await getDoc(startRef); started = ts(st.data().startedAt) || new Date(); } catch (err) { busy(e.target, false); return toast(errMsg(err)); } }
+      exam();
+    };
   };
+  const exam = () => {
+    const sk = `exam-${id}-${S.me.id}`; let st = {}; try { st = JSON.parse(localStorage.getItem(sk) || "{}"); } catch {}
+    const ans = st.ans || {}, flags = st.flags || {};
+    let order = st.order; if (!order || order.length !== N) { order = [...Array(N).keys()]; if (q.shuffle) order = shuffle(order); }
+    let cur = Math.min(st.cur || 0, N - 1), submitting = false, timer = null;
+    const save = () => { try { localStorage.setItem(sk, JSON.stringify({ ans, flags, order, cur })); } catch {} };
+    const deadline = q.timeLimit && started ? started.getTime() + q.timeLimit * 60000 : 0;
+    main.innerHTML = `<div class="exam">
+      <div class="exam-top"><div><b>${esc(q.title)}</b><div class="muted" style="font-size:13px">${esc(S.me.name)}</div></div><span class="spacer"></span>
+        <div class="exam-prog"><span id="pdone">0</span> / ${N} <small>تمت الإجابة</small><div class="bar"><i id="pbar"></i></div></div>
+        ${deadline ? `<div class="timer" id="timer">--:--</div>` : ""}</div>
+      <div class="exam-body"><div class="exam-main" id="qbox"></div>
+        <aside class="exam-nav"><div class="row" style="margin-bottom:8px"><b>الأسئلة</b><span class="spacer"></span><span class="muted" style="font-size:12px">● مُجاب 🚩 للمراجعة</span></div>
+          <div class="navgrid" id="navg"></div><button class="btn block" id="toreview" style="margin-top:12px">مراجعة وإنهاء</button></aside></div></div>`;
+    const answered = () => Object.keys(ans).filter((k) => ans[k] >= 0).length;
+    const nav = () => {
+      $("#navg").innerHTML = order.map((qi, p) => `<button type="button" class="nb ${ans[qi] >= 0 ? "done" : ""} ${p === cur ? "cur" : ""} ${flags[qi] ? "flag" : ""}" data-p="${p}">${p + 1}</button>`).join("");
+      $$("#navg .nb").forEach((b) => (b.onclick = () => { cur = +b.dataset.p; show(); }));
+      $("#pdone").textContent = answered(); $("#pbar").style.width = (answered() / N) * 100 + "%";
+    };
+    const show = () => {
+      const qi = order[cur], qq = q.questions[qi]; save();
+      $("#qbox").innerHTML = `<div class="qcard"><div class="row qhead"><span class="qnum">السؤال ${cur + 1} من ${N}</span>${qq.points ? `<span class="pts">${qq.points} درجات</span>` : ""}<span class="spacer"></span>
+          <button type="button" class="btn ghost sm flagbtn ${flags[qi] ? "on" : ""}" id="flag">${flags[qi] ? "🚩 مُعلَّم للمراجعة" : "🏳 علّم للمراجعة"}</button></div>
+        <div class="qtext">${qText(qq)}</div>
+        <div class="choices">${qq.options.map((o, j) => `<button type="button" class="choice ${ans[qi] === j ? "sel" : ""}" data-j="${j}"><span class="lt">${["A", "B", "C", "D", "E", "F"][j]}</span><span class="ct">${inline(o)}</span></button>`).join("")}</div>
+        ${ans[qi] >= 0 ? `<button type="button" class="btn link sm" id="clr" style="margin-top:6px">مسح الإجابة</button>` : ""}
+        <div class="row qfoot"><button type="button" class="btn ghost" id="prev" ${cur === 0 ? "disabled" : ""}>→ السابق</button><span class="spacer"></span>
+          ${cur < N - 1 ? `<button type="button" class="btn" id="next">التالي ←</button>` : `<button type="button" class="btn" id="fin">مراجعة وإنهاء</button>`}</div></div>`;
+      $$(".choice", main).forEach((b) => (b.onclick = () => { ans[qi] = +b.dataset.j; save(); show(); }));
+      if ($("#clr")) $("#clr").onclick = () => { delete ans[qi]; save(); show(); };
+      $("#flag").onclick = () => { flags[qi] = !flags[qi]; save(); show(); };
+      $("#prev").onclick = () => { if (cur > 0) { cur--; show(); } };
+      if ($("#next")) $("#next").onclick = () => { cur++; show(); };
+      if ($("#fin")) $("#fin").onclick = review;
+      nav(); if (window.innerWidth < 900) $("#qbox").scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    const review = () => {
+      const un = order.map((qi, p) => [qi, p]).filter(([qi]) => !(ans[qi] >= 0)), fl = order.map((qi, p) => [qi, p]).filter(([qi]) => flags[qi]);
+      openModal(`<h2>مراجعة قبل التسليم</h2>
+        <div class="grid g3" style="margin-bottom:12px"><div class="stat"><div class="n" style="color:var(--ok)">${answered()}</div><div class="l">تمت الإجابة</div></div>
+          <div class="stat"><div class="n" style="color:${un.length ? "var(--danger)" : "inherit"}">${un.length}</div><div class="l">بدون إجابة</div></div>
+          <div class="stat"><div class="n" style="color:#d98a00">${fl.length}</div><div class="l">مُعلَّمة للمراجعة</div></div></div>
+        ${un.length ? `<p><b>أسئلة بدون إجابة:</b> ${un.map(([, p]) => `<button class="nb" data-jump="${p}">${p + 1}</button>`).join(" ")}</p>` : ""}
+        ${fl.length ? `<p><b>أسئلة مُعلَّمة:</b> ${fl.map(([, p]) => `<button class="nb flag" data-jump="${p}">${p + 1}</button>`).join(" ")}</p>` : ""}
+        <p class="muted">بعد التسليم النهائي لا يمكن تعديل الإجابات.</p>
+        <div class="row"><button class="btn ghost" data-close>العودة للاختبار</button><span class="spacer"></span><button class="btn" id="final">تسليم نهائي</button></div>`);
+      $$("[data-jump]").forEach((b) => (b.onclick = () => { closeModal(); cur = +b.dataset.jump; show(); }));
+      $("#final").onclick = () => { closeModal(); submit(false); };
+    };
+    const submit = async (auto) => {
+      if (submitting) return; submitting = true; clearInterval(timer);
+      const picks = Object.fromEntries(Object.entries(ans).filter(([, v]) => v >= 0).map(([k, v]) => [String(k), v]));
+      $("#qbox").innerHTML = `<div class="qcard empty"><div class="spinner" style="margin:0 auto 12px"></div>${auto ? "انتهى الوقت — جارٍ تسليم إجاباتك..." : "جارٍ التسليم..."}</div>`;
+      try {
+        await setDoc(doc(db, "submissions", `${id}_${S.me.id}`), { quizId: id, studentId: S.me.id, className: S.me.className || "", picks, scored: false, submittedAt: serverTimestamp() });
+        try { localStorage.removeItem(sk); } catch {} toast(auto ? "انتهى الوقت وتم تسليم إجاباتك ✓" : "تم التسليم ✓"); route();
+      } catch (err) {
+        if (deadline && Date.now() > deadline + 90000) { try { localStorage.removeItem(sk); } catch {} $("#qbox").innerHTML = `<div class="qcard empty">⏰ انتهى وقت الاختبار قبل التسليم، فلم تُقبل الإجابات.<br>تواصل مع المعلم إذا كان هناك عذر.</div>`; return; }
+        submitting = false; toast(errMsg(err)); show();
+      }
+    };
+    $("#toreview").onclick = review;
+    if (deadline) {
+      const tick = () => {
+        const left = Math.max(0, deadline - Date.now()), m = Math.floor(left / 60000), sec = Math.floor((left % 60000) / 1000), t = $("#timer");
+        if (!t) return clearInterval(timer);
+        t.textContent = `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`; t.classList.toggle("low", left < 5 * 60000);
+        if (left <= 0) submit(true);
+      };
+      timer = setInterval(tick, 1000); S.unsubs.push(() => clearInterval(timer)); tick();
+    }
+    show();
+  };
+  if (started && q.timeLimit) exam(); else intro();
 }
 async function sAssignments(main) {
   const [as, hw] = await Promise.all([pubQ("assignments"), myQ("homework")]); as.sort(byDate);

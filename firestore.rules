@@ -16,6 +16,14 @@ service cloud.firestore {
     function isStudent() {
       return signedIn() && exists(studentPath(uid())) && get(studentPath(uid())).data.active == true;
     }
+    function quizDoc(qid) { return get(/databases/$(database)/documents/quizzes/$(qid)).data; }
+    // الاختبار المؤقت: يجب أن يكون الطالب قد بدأه، وأن يسلّم قبل انتهاء الزمن (+ دقيقتان سماح)
+    function withinTime(qid) {
+      return quizDoc(qid).get('timeLimit', 0) == 0
+        || (exists(/databases/$(database)/documents/starts/$(qid + '_' + uid()))
+            && request.time <= get(/databases/$(database)/documents/starts/$(qid + '_' + uid())).data.startedAt
+                               + duration.value(quizDoc(qid).get('timeLimit', 0) + 2, 'm'));
+    }
     function keysOnly(list) { return request.resource.data.keys().hasOnly(list); }
     function changedOnly(list) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(list); }
 
@@ -109,9 +117,24 @@ service cloud.firestore {
         && request.resource.data.picks.size() <= 200
         && request.resource.data.scored == false
         && request.resource.data.submittedAt == request.time
-        && get(/databases/$(database)/documents/quizzes/$(request.resource.data.quizId)).data.published == true
-        && get(/databases/$(database)/documents/quizzes/$(request.resource.data.quizId)).data.open == true;
+        && quizDoc(request.resource.data.quizId).published == true
+        && quizDoc(request.resource.data.quizId).open == true
+        && withinTime(request.resource.data.quizId);
       allow update, delete: if isTeacher();   // الاحتساب، أو السماح بإعادة الحل
+    }
+
+    // وقت بدء الاختبار لكل طالب (لمنع التسليم بعد انتهاء الزمن)
+    match /starts/{sid} {
+      allow read: if isTeacher() || (isStudent() && (resource == null || resource.data.studentId == uid()));
+      allow create: if isStudent()
+        && keysOnly(['quizId', 'studentId', 'startedAt'])
+        && request.resource.data.studentId == uid()
+        && sid == request.resource.data.quizId + '_' + uid()
+        && request.resource.data.startedAt == request.time
+        && quizDoc(request.resource.data.quizId).published == true
+        && quizDoc(request.resource.data.quizId).open == true;
+      allow update: if false;
+      allow delete: if isTeacher();
     }
 
     // ---------- مشاهدات الدروس (للمتابعة) ----------

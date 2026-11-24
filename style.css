@@ -222,6 +222,37 @@ td.ltr,span.ltr{direction:ltr;unicode-bidi:embed;font-family:ui-monospace,Consol
 .sticky-score{position:sticky;top:0;z-index:4}
 @media(max-width:900px){.sticky-score{top:52px}}
 
+/* ---------- exam (SwiftAssess style) ---------- */
+.qimg{margin:10px 0}.qimg img{max-width:100%;max-height:360px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.q .qt{display:flex;gap:8px;align-items:flex-start}
+.pts{display:inline-block;border:1.5px solid var(--danger);color:var(--danger);border-radius:20px;padding:0 10px;font-size:12.5px;font-weight:700;white-space:nowrap}
+.rules{line-height:2;padding-inline-start:20px;color:#34405a}
+.exam-top{display:flex;align-items:center;gap:16px;background:#0f2a3a;color:#fff;border-radius:14px;padding:12px 18px;margin-bottom:14px;position:sticky;top:0;z-index:6}
+.exam-top .muted{color:#9fb8c8}
+.exam-prog{font-weight:700;min-width:150px}.exam-prog small{font-weight:400;color:#9fb8c8}
+.exam-prog .bar{height:6px;background:rgba(255,255,255,.15);border-radius:4px;margin-top:4px;overflow:hidden}.exam-prog .bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+.timer{font-family:ui-monospace,Consolas,monospace;font-size:24px;font-weight:800;background:rgba(255,255,255,.1);padding:4px 14px;border-radius:10px;direction:ltr}
+.timer.low{background:var(--danger);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.7}}
+.exam-body{display:grid;grid-template-columns:1fr 260px;gap:14px;align-items:start}
+.qcard{background:#fff;border-radius:14px;box-shadow:var(--shadow);padding:22px}
+.qhead{margin-bottom:12px}.qnum{background:var(--brand);color:#fff;border-radius:8px;padding:3px 12px;font-weight:700;font-size:14px}
+.qtext{font-size:18px;font-weight:600;line-height:1.9;margin-bottom:16px}
+.choices{display:flex;flex-direction:column;gap:10px}
+.choice{display:flex;align-items:center;gap:12px;border:2px solid var(--line);border-radius:12px;padding:12px 14px;background:#fff;font:inherit;font-size:16.5px;text-align:right;cursor:pointer;transition:border-color .12s,background .12s}
+.choice:hover{border-color:var(--brand-2)}
+.choice .lt{width:32px;height:32px;border-radius:50%;border:2px solid #b9c2d0;display:grid;place-items:center;font-weight:800;flex-shrink:0;font-family:system-ui;color:#64708a}
+.choice.sel{border-color:var(--brand);background:var(--brand-soft)}.choice.sel .lt{background:var(--brand);border-color:var(--brand);color:#fff}
+.qfoot{margin-top:20px;border-top:1px solid var(--line);padding-top:14px}
+.flagbtn.on{border-color:#d98a00;color:#9a6100;background:#fdf3dc}
+.exam-nav{background:#fff;border-radius:14px;box-shadow:var(--shadow);padding:14px;position:sticky;top:84px}
+.navgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;direction:rtl}
+.nb{border:1.5px solid var(--line);background:#fff;border-radius:8px;padding:6px 0;font:inherit;font-weight:700;cursor:pointer;position:relative;min-width:34px}
+.nb.done{background:var(--brand);border-color:var(--brand);color:#fff}
+.nb.cur{outline:3px solid var(--accent);outline-offset:1px}
+.nb.flag::after{content:"🚩";position:absolute;top:-8px;left:-4px;font-size:11px}
+@media(max-width:900px){.exam-body{grid-template-columns:1fr}.exam-nav{position:static}.exam-top{top:52px;flex-wrap:wrap;gap:8px}.qtext{font-size:16.5px}.navgrid{grid-template-columns:repeat(8,1fr)}}
+
 /* ---------- print (بطاقات الدخول) ---------- */
 .cards-print{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
 .login-slip{border:1.5px dashed #999;border-radius:10px;padding:12px 14px;font-size:14px}
