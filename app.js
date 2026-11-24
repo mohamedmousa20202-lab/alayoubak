@@ -50,7 +50,7 @@ const ago = (t) => {
   const dd = Math.round(h / 24); return dd < 30 ? `منذ ${dd} يوم` : fmt(d, false);
 };
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2600); }
-function openModal(html) { $("#modal-body").innerHTML = html; $("#modal").classList.remove("hidden"); }
+function openModal(html, cls = "") { const b = $("#modal-body"); b.innerHTML = html; b.parentElement.classList.toggle("wide", cls === "wide"); $("#modal").classList.remove("hidden"); }
 function closeModal() { $("#modal").classList.add("hidden"); $("#modal-body").innerHTML = ""; }
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal" || e.target.closest("[data-close]")) closeModal(); });
 const forClass = (item) => !item.classes || !item.classes.length || (S.me && item.classes.includes(S.me.className));
@@ -97,7 +97,7 @@ function driveEmbed(u) { const m = String(u).match(/drive\.google\.com\/file\/d\
 // الصيغ الكيميائية تُعزل باتجاه يسار←يمين حتى لا تنقلب الشحنة (SO₄²⁻) داخل النص العربي
 const chem = (e) => e
   .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
-  .replace(/[^\s<>]*[_^][^\s<>]*/g, (t) => "⁦" + t.replace(/_(\d+)/g, "<sub>$1</sub>").replace(/\^(\d*[+\-]|\d+)/g, "<sup>$1</sup>") + "⁩");
+  .replace(/[^\s<>]*[_^][^\s<>]*/g, (t) => "⁦" + t.replace(/_\{([^}]*)\}/g, "<sub>$1</sub>").replace(/\^\{([^}]*)\}/g, "<sup>$1</sup>").replace(/_(\d+)/g, "<sub>$1</sub>").replace(/\^([\-−]\d+|\d+[+\-−]|\d+|[+\-−])/g, "<sup>$1</sup>") + "⁩");
 // المعادلات والأرقام اللاتينية داخل النص العربي تُعزل يساراً←يميناً حتى لا ينقلب ترتيبها (Ag⁺ + e⁻ → Ag)
 const ltrRuns = (e) => e.replace(/[A-Za-z0-9+\-−(\[|][^\u0600-\u06FF،؛؟]*[A-Za-z0-9)\]+\-−°|]/g, (r) => (/[\s→|=]/.test(r) || /^[+\-−]/.test(r) ? "\u2066" + r + "\u2069" : r));
 function inline(s) {
@@ -106,7 +106,15 @@ function inline(s) {
 }
 // نص السؤال: أسطر متعددة + صورة اختيارية (رابط https أو صورة داخل مجلد images في المنصة)
 const imgSrc = (u) => { const v = String(u || "").trim(); return /^https:\/\//i.test(v) || /^images\/[\w.\-]+$/i.test(v) ? v : ""; };
-const qText = (q) => String(q.text || "").split("\n").map((l) => inline(l)).join("<br>") + (imgSrc(q.image) ? `<div class="qimg"><img src="${esc(imgSrc(q.image))}" alt="" loading="lazy"></div>` : "");
+// أسطر تبدأ بـ | تُعرض جدولاً (السطر الأول رأس الجدول)
+function textBlock(t) {
+  const lines = String(t || "").split("\n"), out = []; let tb = [];
+  const flush = () => { if (!tb.length) return; const rows = tb.map((l) => l.replace(/^\s*\||\|\s*$/g, "").split("|").map((c) => inline(c.trim())));
+    out.push(`<div class="qtbl"><table>${rows.map((r, i) => `<tr>${r.map((c) => (i ? `<td>${c}</td>` : `<th>${c}</th>`)).join("")}</tr>`).join("")}</table></div>`); tb = []; };
+  lines.forEach((l) => { if (/^\s*\|/.test(l)) tb.push(l); else { flush(); out.push(`<div class="ql">${inline(l) || "&nbsp;"}</div>`); } });
+  flush(); return out.join("");
+}
+const qText = (q) => textBlock(q.text) + (imgSrc(q.image) ? `<div class="qimg"><img src="${esc(imgSrc(q.image))}" alt="" loading="lazy"></div>` : "");
 function rich(text) {
   return String(text || "").split("\n").map((line) => {
     const L = line.trim();
@@ -547,13 +555,14 @@ function parseBulk(text) {
   const out = [];
   for (const block of text.split(/\n\s*\n/)) {
     const lines = block.split("\n").map((l) => l.trim()).filter(Boolean); if (!lines.length) continue;
-    const q = { text: "", options: [], answer: -1, explanation: "", image: "", points: 1 };
+    const q = { text: "", options: [], answer: -1, explanation: "", image: "", points: 1, outcome: "", ocode: "" };
     for (const line of lines) {
       let m;
       if ((m = line.match(/^(?:الإجابة|الاجابة|الجواب|answer)\s*[:：]\s*(\S+)/i))) { const k = m[1].replace(/[).\-]/g, "").toLowerCase(); if (k in map) q.answer = map[k]; }
       else if ((m = line.match(/^(?:الشرح|التفسير|explanation)\s*[:：]\s*(.+)/i))) q.explanation = m[1];
       else if ((m = line.match(/^(?:الدرجة|درجة|الدرجات|points?)\s*[:：]\s*(\d+(?:\.\d+)?)/i))) q.points = +m[1];
       else if ((m = line.match(/^(?:صورة|img|image)\s*[:：]\s*(\S+)/i)) && !q.options.length) q.image = m[1];
+      else if ((m = line.match(/^(?:ناتج التعلم|ناتج|outcome)\s*[:：]\s*(.+)/i))) { const [a, b] = m[1].split("|").map((x) => x.trim()); q.outcome = a || ""; q.ocode = b || ""; }
       else if ((m = line.match(/^(\*)?\s*(هـ|أ|ا|ب|ج|د|ه|و|[a-fA-F])\s*[)\-.:]\s*(.+)$/)) && q.text) { if (m[1]) q.answer = q.options.length; q.options.push(m[3].trim()); }
       else if (!q.options.length) q.text += (q.text ? "\n" : "") + (q.text ? line : line.replace(/^(?:س\s*\d*\s*[:：\-.)]|\d+\s*[\-.)]|q\d*[:.)])\s*/i, ""));
     }
@@ -568,7 +577,7 @@ async function tQuizEdit(main, id) {
   if (!isNew) {
     const [qs, ks] = await Promise.all([getDoc(doc(db, "quizzes", id)), getDoc(doc(db, "quizKeys", id))]);
     if (!qs.exists()) return go("quizzes"); q = { ...q, ...qs.data() }; const key = ks.exists() ? ks.data() : { answers: [], explanations: [] };
-    questions = (q.questions || []).map((x, i) => ({ text: x.text, options: x.options, image: x.image || "", points: x.points || 1, answer: key.answers[i] ?? 0, explanation: key.explanations?.[i] || "" }));
+    questions = (q.questions || []).map((x, i) => ({ text: x.text, options: x.options, image: x.image || "", points: x.points || 1, outcome: x.outcome || "", ocode: x.ocode || "", answer: key.answers[i] ?? 0, explanation: key.explanations?.[i] || "" }));
   }
   main.innerHTML = `<div class="page-head"><h1>${isNew ? "اختبار جديد" : "تعديل الاختبار"}</h1><div class="row">${isNew ? "" : `<a class="btn ghost" href="#/quiz-results/${id}">النتائج</a>`}<a class="btn ghost" href="#/quizzes">رجوع</a></div></div>
   <form id="qf">
@@ -596,6 +605,7 @@ async function tQuizEdit(main, id) {
       <div class="row" style="margin-top:6px;flex-wrap:nowrap"><label style="margin:0;white-space:nowrap">الدرجة</label><input type="number" data-f="points" min="0.5" step="0.5" value="${x.points || 1}" style="width:80px">
         <input type="text" data-f="image" dir="ltr" value="${esc(x.image || "")}" placeholder="رابط صورة للسؤال (اختياري) https://..." style="flex:1"></div>
       ${imgSrc(x.image) ? `<div class="qimg" style="margin-top:6px"><img src="${esc(imgSrc(x.image))}" alt=""></div>` : ""}
+      <div class="row" style="margin-top:6px;flex-wrap:nowrap"><input type="text" data-f="outcome" value="${esc(x.outcome || "")}" placeholder="ناتج التعلم (اختياري)" style="flex:2"><input type="text" data-f="ocode" dir="ltr" value="${esc(x.ocode || "")}" placeholder="CHM.5.5.01.001.07" style="flex:1"></div>
       <p class="hint" style="margin:6px 0">اختر الدائرة بجانب الإجابة الصحيحة:</p>
       <div class="opts">${x.options.map((o, j) => `<input type="radio" name="ans${i}" value="${j}" ${x.answer === j ? "checked" : ""} style="accent-color:var(--ok);width:18px;height:18px">
         <div class="row" style="flex-wrap:nowrap"><input type="text" data-o="${j}" value="${esc(o)}" placeholder="الخيار ${LETTERS[j]}">${x.options.length > 2 ? `<button type="button" class="btn link sm danger" data-ro="${j}">✕</button>` : ""}</div>`).join("")}</div>
@@ -605,7 +615,7 @@ async function tQuizEdit(main, id) {
   };
   const sync = () => $$(".qedit").forEach((el) => {
     const x = questions[+el.dataset.i]; x.text = $('[data-f=text]', el).value; x.explanation = $('[data-f=explanation]', el).value;
-    x.points = +$('[data-f=points]', el).value || 1; x.image = $('[data-f=image]', el).value.trim();
+    x.points = +$('[data-f=points]', el).value || 1; x.image = $('[data-f=image]', el).value.trim(); x.outcome = $('[data-f=outcome]', el).value.trim(); x.ocode = $('[data-f=ocode]', el).value.trim();
     x.options = $$("[data-o]", el).map((i) => i.value); const r = $(`input[name=ans${el.dataset.i}]:checked`, el); x.answer = r ? +r.value : 0;
   });
   draw();
@@ -629,7 +639,7 @@ async function tQuizEdit(main, id) {
 د) 4
 الإجابة: ب
 الدرجة: 3
-الشرح: الكتلة المولية لـ O_2 = 32 g/mol</pre><p class="hint">اختياري: سطر «الدرجة: 4» لدرجة السؤال، وسطر «صورة: رابط» لإرفاق صورة.</p>
+الشرح: الكتلة المولية لـ O_2 = 32 g/mol</pre><p class="hint">اختياري: «الدرجة: 4» لدرجة السؤال، «صورة: رابط» لإرفاق صورة، «ناتج: نص ناتج التعلم | CHM.5.5.01.001.07»، وأسطر تبدأ بـ | لجدول داخل السؤال.</p>
       <textarea id="bulkq" style="min-height:220px"></textarea><div id="perr"></div>
       <div class="row"><button class="btn" id="doparse">إضافة الأسئلة</button><button class="btn ghost" data-close>إلغاء</button></div>`);
     $("#doparse").onclick = () => {
@@ -650,7 +660,7 @@ async function tQuizEdit(main, id) {
     const points = clean.map((x) => +x.points || 1);
     const pub = { title: f.title.value.trim(), description: f.desc.value.trim(), classes: pickedClasses(f), published: f.pub.checked, open: f.open.checked, showResults: f.show.checked,
       timeLimit: Math.max(0, Math.round(+f.time.value || 0)), shuffle: f.shuffle.checked, totalPoints: points.reduce((a, b) => a + b, 0),
-      questions: clean.map((x, i) => ({ text: x.text, options: x.options, points: points[i], ...(x.image ? { image: x.image } : {}) })), count: clean.length };
+      questions: clean.map((x, i) => ({ text: x.text, options: x.options, points: points[i], ...(x.image ? { image: x.image } : {}), ...(x.outcome ? { outcome: x.outcome } : {}), ...(x.ocode ? { ocode: x.ocode } : {}) })), count: clean.length };
     const key = { answers: clean.map((x) => x.answer), explanations: clean.map((x) => x.explanation.trim()), points };
     try {
       let qid = id;
@@ -697,14 +707,8 @@ async function tQuizResults(main, id) {
     const x = subs.find((y) => y.id === b.dataset.redo);
     await commitChunks([(wb) => wb.delete(doc(db, "submissions", x.id)), (wb) => wb.delete(doc(db, "starts", x.id)), ...undoSub(x)]); toast("يمكن للطالب إعادة الحل الآن"); route();
   }));
-  $$("[data-view]", main).forEach((b) => (b.onclick = () => { const r = rows.find((r) => r.x.id === b.dataset.view); openModal(`<h2>${esc(r.s.name)} — ${r.sc.right} من ${r.sc.total}</h2>${reviewHTML(q, key, answersOf(r.x, n))}<button class="btn ghost" data-close>إغلاق</button>`); }));
+  $$("[data-view]", main).forEach((b) => (b.onclick = () => { const r = rows.find((r) => r.x.id === b.dataset.view); openModal(`<div class="row"><h2 style="margin:0">${esc(r.s.name)}</h2><span class="spacer"></span><button class="btn ghost sm" data-close>إغلاق</button></div>${saResultHTML(q, key, answersOf(r.x, n), { name: r.s.name })}`, "wide"); }));
   $("#csv").onclick = () => downloadCSV(`نتائج-${q.title}`, [["الطالب", "الصف", "الدرجة", "من", "النسبة %", "وقت التسليم"], ...rows.map((r) => [r.s.name, r.s.className, r.sc.right, r.sc.total, r.sc.pct, ts(r.x.submittedAt)?.toLocaleString("ar-AE")]), ...missing.map((s) => [s.name, s.className, "لم يسلّم", "", "", ""])]);
-}
-function reviewHTML(q, key, answers) {
-  return (q.questions || []).map((qq, i) => `<div class="q"><div class="qt"><span class="qn">${i + 1}</span><div style="flex:1">${qText(qq)}</div>${qq.points ? `<span class="pts">${qq.points} درجات</span>` : ""}</div>
-    ${qq.options.map((o, j) => `<div class="opt ${j === key.answers[i] ? "right" : answers[i] === j ? "wrong" : ""}">${j === key.answers[i] ? "✔" : answers[i] === j ? "✘" : "○"} ${"ABCDEF"[j]}) ${inline(o)}</div>`).join("")}
-    ${answers[i] == null || answers[i] < 0 ? `<p class="hint">لم تتم الإجابة على هذا السؤال</p>` : ""}
-    ${key.explanations?.[i] ? `<div class="expl">💡 ${inline(key.explanations[i])}</div>` : ""}</div>`).join("");
 }
 // ---------- الواجبات ----------
 async function tAssignments(main) {
@@ -852,115 +856,211 @@ async function sQuizzes(main) {
     return `<div class="item clickable" onclick="location.hash='#/quiz/${q.id}'"><div class="ic">📝</div><div class="body"><div class="t">${esc(q.title)}</div><div class="m">${q.count} سؤال${q.timeLimit ? ` · ⏱ ${q.timeLimit} دقيقة` : ""}${q.totalPoints ? ` · ${q.totalPoints} درجة` : ""}</div></div>
     ${done ? `<span class="pill ok">تم التسليم</span>` : q.open ? `<span class="btn sm">ابدأ</span>` : `<span class="pill gray">مغلق</span>`}</div>`; }).join("") || `<div class="empty">لا توجد اختبارات.</div>`}</div>`;
 }
+// ---------- واجهة الاختبار بنمط SwiftAssess (مثل منصة التدريب على الاختبارات الإلكترونية) ----------
+const SA_L = ["a", "b", "c", "d", "e", "f"];
+const saIcon = {
+  menu: `<svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>`,
+  info: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg>`,
+  doc: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zm2 16H8v-2h8zm0-4H8v-2h8zm-3-5V3.5L18.5 9z"/></svg>`,
+  gear: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 000-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 00-1.7-1L15 3h-4l-.3 2.9a7.6 7.6 0 00-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 000 2l-2.1 1.6 2 3.5 2.5-1a7.6 7.6 0 001.7 1L11 21h4l.3-2.9a7.6 7.6 0 001.7-1l2.5 1 2-3.5zM13 15.5A3.5 3.5 0 1113 8.5a3.5 3.5 0 010 7z"/></svg>`,
+  prev: `<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 11h12.2l-5.6-5.6L12 4l8 8-8 8-1.4-1.4 5.6-5.6H4z"/></svg>`,
+  next: `<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></svg>`,
+  flag: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M17 3H7a2 2 0 00-2 2v16l7-3 7 3V5a2 2 0 00-2-2zm0 15l-5-2.2L7 18V5h10z"/></svg>`,
+  flagOn: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M17 3H7a2 2 0 00-2 2v16l7-3 7 3V5a2 2 0 00-2-2z"/></svg>`,
+  warn: `<svg viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M1 21h22L12 2zm12-3h-2v-2h2zm0-4h-2v-4h2z"/></svg>`,
+  user: `<svg viewBox="0 0 24 24" width="54" height="54"><path fill="currentColor" d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4 0-10 2-10 6v2h20v-2c0-4-6-6-10-6z"/></svg>`,
+  clock: `<svg viewBox="0 0 24 24" width="30" height="30"><path fill="none" stroke="currentColor" stroke-width="2" d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/></svg>`,
+};
+function saToast(msg, title = "تحذير") {
+  const t = document.createElement("div"); t.className = "sa-toast";
+  t.innerHTML = `<div class="sa-toast-ic">${saIcon.warn}</div><div><b>${esc(title)}</b><div>${esc(msg)}</div><small>منذ ثانية</small></div>`;
+  document.body.appendChild(t); setTimeout(() => t.classList.add("out"), 3600); setTimeout(() => t.remove(), 4100);
+}
+function saDialog(html) {
+  const d = document.createElement("div"); d.className = "sa-dim"; d.innerHTML = `<div class="sa-dlg">${html}</div>`;
+  document.body.appendChild(d); d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-x]")) d.remove(); }); return d;
+}
+const saPlain = (t) => String(t || "").split("\n").find((l) => l.trim() && !/^\s*\|/.test(l)) || "";
+const saShort = (t) => { const p = saPlain(t).replace(/\*\*/g, ""); return p.length > 70 ? p.slice(0, 70).replace(/\S*$/, "") + "…" : p; };
+const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+
+// شاشة النتيجة والمراجعة (للطالب بعد التسليم، وللمعلم عند عرض إجابات طالب)
+function saResultHTML(q, key, answers, { taken = null, name = "" } = {}) {
+  const qs = q.questions || [], pts = qs.map((x, i) => +(key.points || [])[i] || +x.points || 1);
+  const got = qs.map((x, i) => (answers[i] === key.answers[i] ? pts[i] : 0));
+  const total = pts.reduce((a, b) => a + b, 0), right = got.reduce((a, b) => a + b, 0), pct = total ? Math.round((right / total) * 100) : 0;
+  const pass = Math.ceil(total * 0.5), passed = right >= pass;
+  const deg = Math.round(pct * 3.6);
+  const groups = {}; qs.forEach((x, i) => { const k = x.ocode || x.outcome || "—"; (groups[k] ||= { label: x.outcome || "", code: x.ocode || "", got: 0, tot: 0 }); groups[k].got += got[i]; groups[k].tot += pts[i]; });
+  const fmtN = (n) => (Math.round(n * 10) / 10).toString();
+  return `<div class="sa-res">
+    <div class="sa-res-cards">
+      <div class="sa-card"><div><div class="v">${taken != null ? mmss(taken) : "—"}</div><div class="l">الوقت المستغرق</div></div><span class="ic">${saIcon.clock}</span></div>
+      <div class="sa-card"><div><div class="v">${fmtN(right)} / ${fmtN(total)}</div><div class="l">الدرجة</div></div><span class="ic">${passed ? "✓" : "✕"}</span></div>
+      <div class="sa-card"><div><div class="v">${pass}</div><div class="l">درجة النجاح</div></div></div>
+      <div class="sa-card ${passed ? "ok" : "bad"}"><div><div class="v">${passed ? "ناجح" : "راسب"}</div><div class="l">النتيجة</div></div><span class="ic">${passed ? "✓" : "✕"}</span></div>
+    </div>
+    <div class="sa-panel sa-sum"><div class="donut" style="--deg:${deg}deg;--c:${passed ? "#8acc36" : "#f95484"}"><span>${pct}%</span></div>
+      <div><div><i class="dot g"></i>النقاط المكتسبة: ${fmtN(right)}</div><div><i class="dot p"></i>النقاط الفائتة: ${fmtN(total - right)}</div>
+        <div>${fmtN(right)} / ${fmtN(total)}</div>${name ? `<div class="nm">${esc(name)}</div>` : ""}<div class="muted">${esc(q.title || "")} · من إعداد: ${esc(SITE.teacher)}</div></div></div>
+    <div class="sa-tbl"><table><thead><tr><th>عنوان السؤال</th><th>الدرجة</th><th>الدرجة الكلية</th><th>النتيجة</th></tr></thead><tbody>
+      ${qs.map((x, i) => `<tr><td>${i + 1} - ${inline(saShort(x.text))}</td><td>${fmtN(got[i])}</td><td>${fmtN(pts[i])}</td><td class="${got[i] ? "y" : "n"}">${got[i] ? "✓" : "✗"}</td></tr>`).join("")}</tbody></table></div>
+    ${Object.keys(groups).length > 1 ? `<div class="sa-panel"><h3>الأداء حسب ناتج التعلم</h3><div class="sa-out">${Object.values(groups).map((g) => { const p = g.tot ? Math.round((g.got / g.tot) * 100) : 0;
+      return `<div class="sa-o"><div class="t">${inline(g.label || g.code)}</div>${g.code ? `<div class="c" dir="ltr">${esc(g.code)}</div>` : ""}<div class="b"><i style="width:${p}%;background:${p >= 50 ? "#8acc36" : "#f95484"}"></i></div><div class="muted">${fmtN(g.got)}/${fmtN(g.tot)} · ${p}%</div></div>`; }).join("")}</div></div>` : ""}
+    <div class="sa-panel"><h3>مراجعة الإجابات التفصيلية</h3>${saReview(q, key, answers)}</div></div>`;
+}
+function saReview(q, key, answers) {
+  return (q.questions || []).map((x, i) => { const ok = answers[i] === key.answers[i], pts = +(key.points || [])[i] || +x.points || 1;
+    return `<div class="sa-rq"><div class="h"><b>Q.${i + 1}</b> <span class="${ok ? "y" : "n"}">${ok ? "✓" : "✗"}</span> <span class="muted">(${ok ? pts : 0}/${pts})</span></div>
+    <div class="sa-stem">${qText(x)}</div>
+    ${x.options.map((o, j) => `<div class="sa-ro ${j === key.answers[i] ? "right" : answers[i] === j ? "wrong" : ""}"><span class="l">.${SA_L[j]}</span><span>${inline(o)}</span>${answers[i] === j ? `<span class="you">إجابتك</span>` : ""}</div>`).join("")}
+    ${answers[i] == null || answers[i] < 0 ? `<p class="muted">لم تتم الإجابة على هذا السؤال</p>` : ""}
+    ${key.explanations?.[i] ? `<div class="expl">💡 ${inline(key.explanations[i])}</div>` : ""}</div>`; }).join("");
+}
+const reviewHTML = (q, key, answers) => `<div class="sa-res">${saReview(q, key, answers)}</div>`;
+
 async function sQuiz(main, id) {
   const qs = await getDoc(doc(db, "quizzes", id)); if (!qs.exists()) return go("quizzes"); const q = qs.data();
   const sub = (await myQ("submissions")).find((s) => s.quizId === id);
+  const startRef = doc(db, "starts", `${id}_${S.me.id}`);
+  let started = null; try { const st = await getDoc(startRef); if (st.exists()) started = ts(st.data().startedAt); } catch {}
   const head = `<div class="page-head"><div><h1>${esc(q.title)}</h1><p class="sub">${q.count} سؤال${q.totalPoints ? ` · ${q.totalPoints} درجة` : ""}${q.timeLimit ? ` · ${q.timeLimit} دقيقة` : ""}</p></div><a class="btn ghost" href="#/quizzes">رجوع</a></div>`;
   if (sub) {
     if (!q.showResults) { main.innerHTML = head + `<div class="card empty">✅ تم تسليم إجاباتك بتاريخ ${fmt(sub.submittedAt)}.<br>سيعلن المعلم النتائج لاحقاً.</div>`; return; }
-    const ks = await getDoc(doc(db, "quizKeys", id)); const key = ks.data(); const sc = scoreOf(sub, key);
-    main.innerHTML = head + `<div class="card" style="text-align:center"><div class="score-big">${sc.right} من ${sc.total}</div><div>${pctPill(sc.pct)}</div><p class="muted">${sc.pct >= 85 ? "ممتاز! أحسنت 🌟" : sc.pct >= 60 ? "جيد — راجع الأسئلة الخاطئة 💪" : "راجع الدرس ثم الحلول بالأسفل 📘"}</p></div>${reviewHTML(q, key, answersOf(sub, key.answers.length))}`;
+    const ks = await getDoc(doc(db, "quizKeys", id)); const key = ks.data();
+    const sAt = ts(sub.submittedAt), taken = started && sAt ? sAt - started : null;
+    main.innerHTML = `<div class="sa-res-top"><span class="spacer"></span><button class="sa-tb" id="pr">طباعة</button><a class="sa-tb" href="#/quizzes">العودة إلى الاختبارات</a></div>` + saResultHTML(q, key, answersOf(sub, key.answers.length), { taken, name: S.me.name });
+    $("#pr").onclick = () => window.print();
     return;
   }
   if (!q.open) { main.innerHTML = head + `<div class="card empty">هذا الاختبار مغلق حالياً.</div>`; return; }
   const N = q.questions.length, total = q.totalPoints || N;
-  const startRef = doc(db, "starts", `${id}_${S.me.id}`);
-  let started = null; try { const st = await getDoc(startRef); if (st.exists()) started = ts(st.data().startedAt); } catch {}
   const intro = () => {
-    main.innerHTML = head + `<div class="card exam-intro">
-      <div class="grid g4" style="margin-bottom:14px">
-        <div class="stat"><div class="n">${N}</div><div class="l">عدد الأسئلة</div></div>
-        <div class="stat"><div class="n">${total}</div><div class="l">الدرجة الكلية</div></div>
-        <div class="stat"><div class="n">${q.timeLimit ? q.timeLimit + " د" : "مفتوح"}</div><div class="l">زمن الاختبار</div></div>
-        <div class="stat"><div class="n">مرة واحدة</div><div class="l">عدد المحاولات</div></div></div>
-      ${q.description ? `<p>${esc(q.description)}</p>` : ""}
-      <ul class="rules"><li>يظهر سؤال واحد في كل مرة، وتتنقل بين الأسئلة بأزرار «التالي» و«السابق» أو من لوحة الأسئلة.</li>
-        <li>يمكنك وضع علامة 🚩 على أي سؤال للعودة إليه قبل التسليم.</li>
-        ${q.timeLimit ? `<li>يبدأ العدّ التنازلي عند الضغط على «ابدأ الاختبار»، ولا يتوقف إذا أغلقت الصفحة. عند انتهاء الوقت تُسلَّم إجاباتك تلقائياً.</li>` : ""}
-        <li>إجاباتك تُحفظ على جهازك أثناء الحل، ولا يمكن تعديلها بعد التسليم النهائي.</li></ul>
-      <div class="row"><span class="spacer"></span><button class="btn" id="go" style="padding:13px 34px;font-size:17px">${started ? "متابعة الاختبار" : "ابدأ الاختبار"}</button></div></div>`;
+    main.innerHTML = `<div class="sa-intro"><div class="sa-intro-h"><div class="muted">${esc(SITE.title)} · ${esc(S.me.className || "")}</div><h1>${esc(q.title)}</h1></div>
+      <div class="sa-intro-b"><div class="sa-res-cards">
+        <div class="sa-card"><div><div class="v">${N}</div><div class="l">عدد الأسئلة</div></div></div>
+        <div class="sa-card"><div><div class="v">${total}</div><div class="l">الدرجة الكلية</div></div></div>
+        <div class="sa-card"><div><div class="v">${q.timeLimit ? q.timeLimit + " دقيقة" : "مفتوح"}</div><div class="l">زمن الاختبار</div></div></div>
+        <div class="sa-card"><div><div class="v">${Math.ceil(total * 0.5)}</div><div class="l">درجة النجاح</div></div></div></div>
+      ${q.description ? `<p class="sa-desc">${esc(q.description)}</p>` : ""}
+      <ul class="rules"><li>يظهر سؤال واحد في كل شاشة؛ تنقّل بالأسهم أو من قائمة الأسئلة ☰.</li>
+        <li>استخدم 🔖 لوضع علامة مراجعة على أي سؤال، والأداة <u><b>S</b></u> لشطب الخيارات التي تستبعدها.</li>
+        <li>لا يمكنك التسليم قبل الاطلاع على جميع الأسئلة.</li>
+        ${q.timeLimit ? `<li>يبدأ العدّ التنازلي عند الضغط على «ابدأ»، ولا يتوقف إذا أغلقت الصفحة، وتُسلَّم الإجابات تلقائياً عند انتهاء الوقت.</li>` : ""}</ul>
+      <div class="row"><a class="sa-tb ghost" href="#/quizzes">رجوع</a><span class="spacer"></span><button class="sa-go" id="go">${started ? "متابعة الاختبار" : "ابدأ الاختبار"}</button></div></div></div>`;
     $("#go").onclick = async (e) => {
       busy(e.target, true);
       if (!started) { try { await setDoc(startRef, { quizId: id, studentId: S.me.id, startedAt: serverTimestamp() }); const st = await getDoc(startRef); started = ts(st.data().startedAt) || new Date(); } catch (err) { busy(e.target, false); return toast(errMsg(err)); } }
-      exam();
+      exam(true);
     };
   };
-  const exam = () => {
+  const exam = (fresh) => {
     const sk = `exam-${id}-${S.me.id}`; let st = {}; try { st = JSON.parse(localStorage.getItem(sk) || "{}"); } catch {}
-    const ans = st.ans || {}, flags = st.flags || {};
+    const ans = st.ans || {}, flags = st.flags || {}, seen = st.seen || {}, strikes = st.strikes || {};
     let order = st.order; if (!order || order.length !== N) { order = [...Array(N).keys()]; if (q.shuffle) order = shuffle(order); }
-    let cur = Math.min(st.cur || 0, N - 1), submitting = false, timer = null;
-    const save = () => { try { localStorage.setItem(sk, JSON.stringify({ ans, flags, order, cur })); } catch {} };
+    let cur = Math.min(st.cur || 0, N - 1), submitting = false, timer = null, strike = false, drawer = false, side = true;
+    let fs = +(localStorage.getItem("sa-fs") || 0), dark = localStorage.getItem("sa-dark") === "1";
+    const save = () => { try { localStorage.setItem(sk, JSON.stringify({ ans, flags, order, cur, seen, strikes })); } catch {} };
     const deadline = q.timeLimit && started ? started.getTime() + q.timeLimit * 60000 : 0;
-    main.innerHTML = `<div class="exam">
-      <div class="exam-top"><div><b>${esc(q.title)}</b><div class="muted" style="font-size:13px">${esc(S.me.name)}</div></div><span class="spacer"></span>
-        <div class="exam-prog"><span id="pdone">0</span> / ${N} <small>تمت الإجابة</small><div class="bar"><i id="pbar"></i></div></div>
-        ${deadline ? `<div class="timer" id="timer">--:--</div>` : ""}</div>
-      <div class="exam-body"><div class="exam-main" id="qbox"></div>
-        <aside class="exam-nav"><div class="row" style="margin-bottom:8px"><b>الأسئلة</b><span class="spacer"></span><span class="muted" style="font-size:12px">● مُجاب 🚩 للمراجعة</span></div>
-          <div class="navgrid" id="navg"></div><button class="btn block" id="toreview" style="margin-top:12px">مراجعة وإنهاء</button></aside></div></div>`;
-    const answered = () => Object.keys(ans).filter((k) => ans[k] >= 0).length;
-    const nav = () => {
-      $("#navg").innerHTML = order.map((qi, p) => `<button type="button" class="nb ${ans[qi] >= 0 ? "done" : ""} ${p === cur ? "cur" : ""} ${flags[qi] ? "flag" : ""}" data-p="${p}">${p + 1}</button>`).join("");
-      $$("#navg .nb").forEach((b) => (b.onclick = () => { cur = +b.dataset.p; show(); }));
-      $("#pdone").textContent = answered(); $("#pbar").style.width = (answered() / N) * 100 + "%";
+    const answered = () => order.filter((qi) => ans[qi] >= 0).length;
+    main.innerHTML = `<div class="sa ${dark ? "dark" : ""}" id="sa" style="--fs:${fs}px">
+      <header class="sa-top">
+        <button class="sa-ib" id="saMenu" title="قائمة الأسئلة">${saIcon.menu}</button>
+        <div class="sa-title"><small>${esc(SITE.title)} · ${esc(S.me.className || "")}</small><b>${esc(q.title)} <span>(${N} أسئلة)</span></b></div>
+        <span class="spacer"></span>
+        <button class="sa-ib" id="saTInfo" title="معلومات السؤال">${saIcon.info}</button>
+        <button class="sa-ib" id="saTDoc" title="التعليمات">${saIcon.doc}</button>
+        <button class="sa-ib" id="saTSet" title="إعدادات سهولة الوصول">${saIcon.gear}</button>
+        <div class="sa-nav"><button class="sa-arrow" id="saPrev" title="السابق">${saIcon.prev}</button><span id="saPos" dir="ltr">1 - ${N}</span><button class="sa-arrow" id="saNext" title="التالي">${saIcon.next}</button></div>
+        <button class="sa-submit" id="saSub2">تسليم</button>
+        <button class="sa-ib sa-flag" id="saFlag" title="علامة للمراجعة">${saIcon.flag}</button>
+        <div class="sa-timer" id="saTimer">${deadline ? "--:--" : "∞"}</div>
+      </header>
+      <div class="sa-body">
+        <aside class="sa-drawer" id="saDrawer"><div class="sa-me"><div class="av">${saIcon.user}</div><div style="flex:1"><small>${esc(S.me.name)}</small><button class="sa-submit wide" id="saSub1">تسليم</button></div></div><div class="sa-list" id="saList"></div></aside>
+        <main class="sa-main" id="saQbox"></main>
+        <aside class="sa-side" id="saSide"></aside>
+      </div>
+      <div class="sa-prog"><i id="saPbar"></i><span id="saPtxt">0%</span></div></div>`;
+    const box = $("#sa");
+    const list = () => {
+      $("#saList").innerHTML = order.map((qi, p) => `<button class="sa-li ${p === cur ? "cur" : ""} ${ans[qi] >= 0 ? "done" : ""} ${flags[qi] ? "fl" : ""}" data-p="${p}">${p + 1} - ${inline(saShort(q.questions[qi].text))}${flags[qi] ? `<span class="bm">${saIcon.flagOn}</span>` : ""}</button>`).join("");
+      $$("#saList .sa-li").forEach((b) => (b.onclick = () => { cur = +b.dataset.p; drawer = false; show(); }));
     };
+    const prog = () => { const p = Math.round((answered() / N) * 100); $("#saPbar").style.width = p + "%"; $("#saPtxt").textContent = p + "%"; };
     const show = () => {
-      const qi = order[cur], qq = q.questions[qi]; save();
-      $("#qbox").innerHTML = `<div class="qcard"><div class="row qhead"><span class="qnum">السؤال ${cur + 1} من ${N}</span>${qq.points ? `<span class="pts">${qq.points} درجات</span>` : ""}<span class="spacer"></span>
-          <button type="button" class="btn ghost sm flagbtn ${flags[qi] ? "on" : ""}" id="flag">${flags[qi] ? "🚩 مُعلَّم للمراجعة" : "🏳 علّم للمراجعة"}</button></div>
-        <div class="qtext">${qText(qq)}</div>
-        <div class="choices">${qq.options.map((o, j) => `<button type="button" class="choice ${ans[qi] === j ? "sel" : ""}" data-j="${j}"><span class="lt">${["A", "B", "C", "D", "E", "F"][j]}</span><span class="ct">${inline(o)}</span></button>`).join("")}</div>
-        ${ans[qi] >= 0 ? `<button type="button" class="btn link sm" id="clr" style="margin-top:6px">مسح الإجابة</button>` : ""}
-        <div class="row qfoot"><button type="button" class="btn ghost" id="prev" ${cur === 0 ? "disabled" : ""}>→ السابق</button><span class="spacer"></span>
-          ${cur < N - 1 ? `<button type="button" class="btn" id="next">التالي ←</button>` : `<button type="button" class="btn" id="fin">مراجعة وإنهاء</button>`}</div></div>`;
-      $$(".choice", main).forEach((b) => (b.onclick = () => { ans[qi] = +b.dataset.j; save(); show(); }));
-      if ($("#clr")) $("#clr").onclick = () => { delete ans[qi]; save(); show(); };
-      $("#flag").onclick = () => { flags[qi] = !flags[qi]; save(); show(); };
-      $("#prev").onclick = () => { if (cur > 0) { cur--; show(); } };
-      if ($("#next")) $("#next").onclick = () => { cur++; show(); };
-      if ($("#fin")) $("#fin").onclick = review;
-      nav(); if (window.innerWidth < 900) $("#qbox").scrollIntoView({ behavior: "smooth", block: "start" });
+      const qi = order[cur], qq = q.questions[qi]; seen[qi] = 1; save();
+      box.classList.toggle("open", drawer); box.classList.toggle("noside", !side); box.classList.toggle("striking", strike);
+      $("#saPos").textContent = `${cur + 1} - ${N}`; $("#saPrev").disabled = cur === 0; $("#saNext").disabled = cur === N - 1;
+      $("#saSub2").style.display = cur === N - 1 ? "" : "none";
+      $("#saFlag").innerHTML = flags[qi] ? saIcon.flagOn : saIcon.flag; $("#saFlag").classList.toggle("on", !!flags[qi]);
+      $("#saSide").innerHTML = `<div class="sa-marks">${qq.points || 1} درجات</div>${qq.outcome || qq.ocode ? `<div class="sa-oc">${inline(qq.outcome || "")}${qq.ocode ? `<div dir="ltr">${esc(qq.ocode)}</div>` : ""}</div>` : ""}`;
+      const sk2 = strikes[qi] || {};
+      $("#saQbox").innerHTML = `<div class="sa-q"><div class="sa-stem">${qText(qq)}</div>
+        <button class="sa-s ${strike ? "on" : ""}" id="saStrike" title="شطب الخيارات"><u>S</u></button>
+        <div class="sa-opts">${qq.options.map((o, j) => `<button class="sa-opt ${ans[qi] === j ? "sel" : ""} ${sk2[j] ? "struck" : ""}" data-j="${j}"><span class="sa-c">${SA_L[j]}</span><span class="sa-t">${inline(o)}</span></button>`).join("")}</div></div>`;
+      $$(".sa-opt", box).forEach((b) => (b.onclick = () => { const j = +b.dataset.j;
+        if (strike) { strikes[qi] = { ...(strikes[qi] || {}), [j]: !(strikes[qi] || {})[j] }; if (strikes[qi][j] && ans[qi] === j) delete ans[qi]; }
+        else { if (sk2[j]) { strikes[qi][j] = false; } ans[qi] = ans[qi] === j ? -1 : j; if (ans[qi] < 0) delete ans[qi]; }
+        save(); show(); }));
+      $("#saStrike").onclick = () => { strike = !strike; show(); };
+      list(); prog(); $("#saQbox").scrollTop = 0;
     };
-    const review = () => {
-      const un = order.map((qi, p) => [qi, p]).filter(([qi]) => !(ans[qi] >= 0)), fl = order.map((qi, p) => [qi, p]).filter(([qi]) => flags[qi]);
-      openModal(`<h2>مراجعة قبل التسليم</h2>
-        <div class="grid g3" style="margin-bottom:12px"><div class="stat"><div class="n" style="color:var(--ok)">${answered()}</div><div class="l">تمت الإجابة</div></div>
-          <div class="stat"><div class="n" style="color:${un.length ? "var(--danger)" : "inherit"}">${un.length}</div><div class="l">بدون إجابة</div></div>
-          <div class="stat"><div class="n" style="color:#d98a00">${fl.length}</div><div class="l">مُعلَّمة للمراجعة</div></div></div>
-        ${un.length ? `<p><b>أسئلة بدون إجابة:</b> ${un.map(([, p]) => `<button class="nb" data-jump="${p}">${p + 1}</button>`).join(" ")}</p>` : ""}
-        ${fl.length ? `<p><b>أسئلة مُعلَّمة:</b> ${fl.map(([, p]) => `<button class="nb flag" data-jump="${p}">${p + 1}</button>`).join(" ")}</p>` : ""}
-        <p class="muted">بعد التسليم النهائي لا يمكن تعديل الإجابات.</p>
-        <div class="row"><button class="btn ghost" data-close>العودة للاختبار</button><span class="spacer"></span><button class="btn" id="final">تسليم نهائي</button></div>`);
-      $$("[data-jump]").forEach((b) => (b.onclick = () => { closeModal(); cur = +b.dataset.jump; show(); }));
-      $("#final").onclick = () => { closeModal(); submit(false); };
+    const instructions = () => saDialog(`<div class="sa-dh"><h2>تعليمات القسم</h2><button class="sa-x" data-x>×</button></div>
+      <div class="sa-db"><p>فيما يلي تعليمات هذا القسم.</p>${q.timeLimit ? `<p>لديك ${q.timeLimit} دقيقة لإكمال هذا القسم.</p>` : ""}${q.description ? `<p><b>${esc(q.description)}</b></p>` : ""}
+      <p class="muted">الأدوات المتاحة: قائمة الأسئلة، معلومات السؤال، الشطب، وضع علامة للمراجعة، وإعدادات سهولة الوصول.</p></div>
+      <div class="sa-df"><button class="sa-ok" data-x>إغلاق</button></div>`);
+    const settings = () => {
+      const d = saDialog(`<div class="sa-dh"><h2>إعدادات سهولة الوصول</h2><button class="sa-x" data-x>×</button></div>
+        <div class="sa-db"><div class="row"><span>حجم الخط</span><span class="spacer"></span><button class="sa-tb" id="fm">A−</button><b id="fv">${17 + fs}</b><button class="sa-tb" id="fp">A+</button></div>
+        <div class="row" style="margin-top:12px"><label class="check"><input type="checkbox" id="dk" ${dark ? "checked" : ""}> الوضع الليلي</label></div></div>
+        <div class="sa-df"><button class="sa-tb" id="rs">إعادة ضبط</button><button class="sa-ok" data-x>إغلاق</button></div>`);
+      const apply = () => { box.style.setProperty("--fs", fs + "px"); box.classList.toggle("dark", dark); $("#fv", d).textContent = 17 + fs; try { localStorage.setItem("sa-fs", fs); localStorage.setItem("sa-dark", dark ? "1" : "0"); } catch {} };
+      $("#fm", d).onclick = () => { fs = Math.max(-3, fs - 1); apply(); }; $("#fp", d).onclick = () => { fs = Math.min(9, fs + 1); apply(); };
+      $("#dk", d).onchange = (e) => { dark = e.target.checked; apply(); }; $("#rs", d).onclick = () => { fs = 0; dark = false; $("#dk", d).checked = false; apply(); };
+    };
+    const trySubmit = () => {
+      if (order.some((qi) => !seen[qi])) return saToast("لا يمكنك التسليم قبل الاطلاع على جميع الأسئلة");
+      const un = N - answered(), fl = order.filter((qi) => flags[qi]).length;
+      const d = saDialog(`<div class="sa-dh"><h2 style="font-weight:400">تأكيد</h2></div>
+        <div class="sa-db"><p>أنت على وشك تسليم التقييم. إذا تابعت فلن تتمكن من تغيير أي إجابة وسيتم حفظ درجاتك نهائياً. هل تريد المتابعة؟</p>
+        ${un ? `<p class="sa-warn">⚠ يوجد ${un} ${un === 1 ? "سؤال" : "أسئلة"} بدون إجابة.</p>` : ""}${fl ? `<p class="sa-warn">🔖 يوجد ${fl} ${fl === 1 ? "سؤال مُعلَّم" : "أسئلة مُعلَّمة"} للمراجعة.</p>` : ""}</div>
+        <div class="sa-df"><button class="sa-ok" id="saYes">تأكيد</button><button class="sa-tb" data-x>إلغاء</button></div>`);
+      $("#saYes", d).onclick = () => { d.remove(); submit(false); };
     };
     const submit = async (auto) => {
       if (submitting) return; submitting = true; clearInterval(timer);
       const picks = Object.fromEntries(Object.entries(ans).filter(([, v]) => v >= 0).map(([k, v]) => [String(k), v]));
-      $("#qbox").innerHTML = `<div class="qcard empty"><div class="spinner" style="margin:0 auto 12px"></div>${auto ? "انتهى الوقت — جارٍ تسليم إجاباتك..." : "جارٍ التسليم..."}</div>`;
+      $("#saQbox").innerHTML = `<div class="sa-q" style="text-align:center;padding-top:60px"><div class="spinner" style="margin:0 auto 12px"></div>${auto ? "انتهى الوقت — جارٍ تسليم إجاباتك..." : "جارٍ التسليم..."}</div>`;
       try {
         await setDoc(doc(db, "submissions", `${id}_${S.me.id}`), { quizId: id, studentId: S.me.id, className: S.me.className || "", picks, scored: false, submittedAt: serverTimestamp() });
         try { localStorage.removeItem(sk); } catch {} toast(auto ? "انتهى الوقت وتم تسليم إجاباتك ✓" : "تم التسليم ✓"); route();
       } catch (err) {
-        if (deadline && Date.now() > deadline + 90000) { try { localStorage.removeItem(sk); } catch {} $("#qbox").innerHTML = `<div class="qcard empty">⏰ انتهى وقت الاختبار قبل التسليم، فلم تُقبل الإجابات.<br>تواصل مع المعلم إذا كان هناك عذر.</div>`; return; }
+        if (deadline && Date.now() > deadline + 90000) { try { localStorage.removeItem(sk); } catch {} $("#saQbox").innerHTML = `<div class="sa-q" style="text-align:center">⏰ انتهى وقت الاختبار قبل التسليم، فلم تُقبل الإجابات.<br>تواصل مع المعلم إذا كان هناك عذر.<br><br><a class="sa-tb" href="#/quizzes">رجوع</a></div>`; return; }
         submitting = false; toast(errMsg(err)); show();
       }
     };
-    $("#toreview").onclick = review;
+    $("#saMenu").onclick = () => { drawer = !drawer; show(); };
+    $("#saTInfo").onclick = () => { side = !side; show(); };
+    $("#saTDoc").onclick = instructions; $("#saTSet").onclick = settings;
+    $("#saPrev").onclick = () => { if (cur > 0) { cur--; show(); } };
+    $("#saNext").onclick = () => { if (cur < N - 1) { cur++; show(); } };
+    $("#saFlag").onclick = () => { const qi = order[cur]; flags[qi] = !flags[qi]; save(); show(); };
+    $("#saSub1").onclick = trySubmit; $("#saSub2").onclick = trySubmit;
     if (deadline) {
       const tick = () => {
-        const left = Math.max(0, deadline - Date.now()), m = Math.floor(left / 60000), sec = Math.floor((left % 60000) / 1000), t = $("#timer");
+        const left = Math.max(0, deadline - Date.now()), t = $("#saTimer");
         if (!t) return clearInterval(timer);
-        t.textContent = `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`; t.classList.toggle("low", left < 5 * 60000);
+        t.textContent = mmss(left); t.classList.toggle("low", left < 5 * 60000);
         if (left <= 0) submit(true);
       };
       timer = setInterval(tick, 1000); S.unsubs.push(() => clearInterval(timer)); tick();
     }
-    show();
+    show(); if (fresh) instructions();
   };
-  if (started && q.timeLimit) exam(); else intro();
+  if (started && q.timeLimit) exam(false); else intro();
 }
+
 async function sAssignments(main) {
   const [as, hw] = await Promise.all([pubQ("assignments"), myQ("homework")]); as.sort(byDate);
   main.innerHTML = `<div class="page-head"><h1>الواجبات</h1></div><div class="card">${as.map((a) => { const h = hw.find((x) => x.assignmentId === a.id); const late = a.due && ts(a.due) < new Date();
