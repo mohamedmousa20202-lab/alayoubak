@@ -491,3 +491,92 @@ th{background:var(--cream);color:var(--maroon)}
 .att-view .att-h{font-weight:800;color:var(--maroon);font-size:14px}
 .att-btn{cursor:pointer}
 .content img[data-fid],.qimg img[data-fid]{max-width:100%;border-radius:8px;min-height:40px;background:var(--cream)}
+
+/* ================= رأس علوي بنمط منصة التدريب على الاختبارات ================= */
+.apphead{background:#fff;border-bottom:1px solid var(--line);box-shadow:0 2px 10px rgba(46,26,14,.06);position:sticky;top:0;z-index:40}
+.ah-in{display:flex;align-items:center;gap:14px;max-width:1280px;margin:0 auto;padding:10px 24px}
+.ah-brand{display:flex;align-items:center;gap:10px;text-decoration:none;min-width:0}
+.ah-brand .logo{width:44px;height:44px;border-radius:12px;background:var(--maroon);color:#fff;display:grid;place-items:center;flex:none}
+.ah-brand b{display:block;color:var(--maroon);font-size:17px;font-weight:800;line-height:1.25;white-space:nowrap}
+.ah-brand small{display:block;color:var(--bronze);font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
+.lang-sw{display:inline-flex;background:var(--band);border:1px solid var(--line);border-radius:999px;padding:3px;gap:2px}
+.lang-sw button{border:0;background:none;font:inherit;font-size:13px;font-weight:700;color:var(--maroon);padding:5px 12px;border-radius:999px;cursor:pointer}
+.lang-sw button.on{background:var(--maroon);color:#fff}
+.ah-user{display:flex;align-items:center;gap:9px;background:var(--cream);border:1px solid var(--line);border-radius:999px;padding:4px 14px 4px 4px;min-width:0}
+html[dir=rtl] .ah-user{padding:4px 4px 4px 14px}
+.ah-user .av{width:34px;height:34px;border-radius:50%;background:var(--maroon);color:#fff;display:grid;place-items:center;font-weight:800;flex:none}
+.ah-user b{display:block;font-size:14px;color:var(--ink);white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis}
+.ah-user small{display:block;font-size:12px;color:var(--muted);white-space:nowrap}
+.ah-out{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;color:var(--maroon);font:inherit;font-weight:700;font-size:13.5px;padding:8px 12px;border-radius:10px;cursor:pointer}
+.ah-out:hover{background:var(--cream)}
+.ah-burger{display:none;border:1px solid var(--line);background:#fff;color:var(--maroon);font-size:22px;border-radius:10px;width:42px;height:40px;cursor:pointer}
+.ah-nav{flex-direction:row!important;display:flex;gap:2px;max-width:1280px;margin:0 auto;padding:0 18px;overflow-x:auto;scrollbar-width:thin;border-top:1px solid var(--band)}
+.ah-nav a{flex:none;display:flex;align-items:center;gap:6px;padding:12px 9px 10px!important;border-radius:0!important;color:var(--muted)!important;font-weight:700;font-size:13.5px;border-bottom:3px solid transparent;background:none!important;white-space:nowrap}
+.ah-nav a svg{color:var(--bronze)}
+.ah-nav a:hover{color:var(--maroon)!important;background:var(--cream)!important}
+.ah-nav a.on{color:var(--maroon)!important;border-bottom-color:var(--maroon);background:none!important}
+.ah-nav a.on svg{color:var(--maroon)}
+.ah-nav .badge{margin-inline-start:2px}
+.nav-sep{flex:none;width:1px;background:var(--line);margin:10px 6px}
+.main{max-width:1280px;margin:0 auto;padding:28px 34px}
+@media(max-width:900px){
+  .ah-in{padding:8px 12px;gap:8px}.ah-brand small,.ah-user .nm,.ah-out span{display:none}.ah-user{padding:3px!important}.ah-brand b{font-size:15px}
+  .ah-burger{display:block}
+  .ah-nav{display:none;flex-direction:column!important;padding:6px 10px 10px;max-height:70vh;overflow-y:auto}
+  .ah-nav.open{display:flex}
+  .ah-nav a{border-bottom:0;border-radius:10px!important;padding:10px 12px!important}.ah-nav a.on{background:var(--cream)!important}
+  .nav-sep{width:auto;height:1px;margin:4px 0}
+  .main{padding:20px 16px}
+}
+@media(max-width:420px){.ah-brand b{max-width:150px;overflow:hidden;text-overflow:ellipsis}.lang-sw button{padding:4px 8px}}
+@media print{.apphead{display:none}}
+
+/* واجهة باللغة الإنجليزية (من اليسار لليمين) */
+body.en{font-family:'Tajawal','Segoe UI',Arial,sans-serif}
+body.en .page-head{border-inline-start:12px solid var(--maroon)}
+
+/* ================= بطاقات الاختبارات للطالب ================= */
+.qgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.qgrid .qcard{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;padding:0}
+.qc-h{display:flex;gap:12px;align-items:center;background:var(--cream);border-inline-start:12px solid var(--maroon);border-bottom:1px solid var(--line);padding:12px 14px}
+.qc-h .t{font-weight:800;color:var(--maroon);font-size:16.5px;line-height:1.35}
+.qc-h .m{margin-top:4px;display:flex;gap:6px;flex-wrap:wrap}
+.qc-stats{display:grid;grid-template-columns:repeat(4,1fr);text-align:center;padding:12px 8px;gap:4px}
+.qc-stats b{display:block;font-size:19px;color:var(--ink)}.qc-stats small{color:var(--muted);font-size:12px}
+.qc-my{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 14px;padding:9px 12px;background:var(--band);border-radius:10px;font-size:13.5px}
+.qc-f{padding:12px 14px;margin-top:auto}
+.att-panel table tr.cur td{background:var(--cream);font-weight:700}
+
+/* ================= أسئلة ثنائية اللغة ================= */
+.bi{display:grid;grid-template-columns:1fr 1fr;gap:18px;direction:ltr}
+.bi>.bi-en{direction:ltr;text-align:left;font-family:'Segoe UI',Arial,'Tajawal',sans-serif}
+.bi>.bi-ar{direction:rtl;text-align:right;border-left:1px solid var(--line);padding-left:18px}
+.sa-opt .bi,.sa-ro .bi{gap:12px;flex:1}
+.sa-opt .bi>.bi-ar,.sa-ro .bi>.bi-ar{padding-left:12px}
+.sa-t,.sa-ro .ot{flex:1;min-width:0}
+.qlang-en .bi,.qlang-ar .bi{grid-template-columns:1fr}
+.qlang-en .bi-ar{display:none}.qlang-ar .bi-en{display:none}
+.qlang-ar .bi>.bi-ar,.qlang-en .bi>.bi-ar{border:0;padding:0}
+@media(max-width:700px){.bi{grid-template-columns:1fr;gap:6px}.bi>.bi-ar{border-left:0;padding-left:0;border-top:1px dashed var(--line);padding-top:6px}.sa-opt .bi>.bi-ar,.sa-ro .bi>.bi-ar{padding-left:0}}
+.passage{background:var(--band);border:1px solid var(--line);border-inline-start:6px solid var(--bronze);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.passage .pt{font-weight:800;color:var(--maroon);margin-bottom:6px}
+.oimg img{max-height:130px;max-width:100%;border-radius:8px;margin-top:6px;display:block}
+.oimg.sm img{max-height:44px;margin:0}
+.sa-lang{width:auto!important;padding:0 10px;gap:6px;display:inline-flex;align-items:center;font-size:12.5px;font-weight:700}
+.sa-hint{margin-top:8px;background:#FFF8E1;border:1px solid #F3D98B;border-radius:10px;padding:10px;font-size:14px}
+.tex .katex{font-size:1.05em}
+.bi-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:700px){.bi-edit{grid-template-columns:1fr}.sa-lang span{display:none}}
+/* الآلة الحاسبة */
+.calc-out{font-size:24px;font-weight:800;text-align:right;padding:10px 12px;margin:10px 0;background:var(--band);border-radius:10px;min-height:48px;direction:ltr;overflow-x:auto}
+.calc-out.bad{color:var(--danger);font-size:16px}
+.calc-keys{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.calc-keys button{font:inherit;font-weight:700;padding:10px 0;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer}
+.calc-keys button:hover{background:var(--cream)}
+.calc-keys .eq{grid-column:span 6;background:var(--maroon);color:#fff;border-color:var(--maroon)}
+.o-ltr{text-align:start}
+.att-panel{max-width:960px;margin:0 auto 16px!important}
+.page-head .row select,#attSel{width:auto}
+body.en th,body.en td{text-align:left}
+@media(max-width:480px){.ah-user{display:none}.ah-brand{flex:1;min-width:0}.ah-brand b{max-width:none;overflow:hidden;text-overflow:ellipsis}}
+.bi-edit,.bi-row{direction:ltr}

@@ -12,6 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, TEACHER_EMAIL, SITE, STUDENT_DOMAIN } from "./config.js";
 import { ELEMENTS, CATS } from "./elements.js";
+import { uiLang, setUiLang, initI18n } from "./i18n.js";
 
 // ---------- تهيئة ----------
 const app = initializeApp(firebaseConfig);
@@ -27,6 +28,7 @@ if (window.__EMU__) {           // للاختبار المحلي فقط
 }
 
 const S = { user: null, role: null, me: null, unsubs: [] };
+initI18n();
 const isTeacher = () => S.role === "teacher";
 document.title = `${SITE.title} | ${SITE.teacher}`;
 
@@ -38,7 +40,7 @@ const safeUrl = (u) => (/^https:\/\//i.test(String(u || "").trim()) ? String(u).
 const ts = (t) => (t && t.toDate ? t.toDate() : t ? new Date(t) : null);
 const fmt = (t, withTime = true) => {
   const d = ts(t); if (!d) return "—";
-  return d.toLocaleString("ar-AE", withTime
+  return d.toLocaleString(uiLang() === "en" ? "en-GB" : "ar-AE", withTime
     ? { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }
     : { day: "numeric", month: "short", year: "numeric" });
 };
@@ -101,9 +103,18 @@ const chem = (e) => e
 // المعادلات والأرقام اللاتينية داخل النص العربي تُعزل يساراً←يميناً حتى لا ينقلب ترتيبها (Ag⁺ + e⁻ → Ag)
 const ltrRuns = (e) => e.replace(/[A-Za-z0-9+\-−(\[|][^\u0600-\u06FF،؛؟]*[A-Za-z0-9)\]+\-−°|]/g, (r) => (/[\s→|=]/.test(r) || /^[+\-−]/.test(r) ? "\u2066" + r + "\u2069" : r));
 function inline(s) {
-  return String(s ?? "").split(/(https:\/\/[^\s]+)/g)
-    .map((part, i) => (i % 2 ? `<a href="${esc(part)}" target="_blank" rel="noopener">${esc(part)}</a>` : chem(ltrRuns(esc(part))))).join("");
+  // معادلات رياضية بصيغة LaTeX بين $...$ (مثل قالب Excel لمنصة المجمع) تُعرض عبر KaTeX
+  return String(s ?? "").split(/(\$\$[^$]+\$\$|\$[^$\n]+\$)/g).map((seg, k) => (k % 2 ? `<span class="tex" dir="ltr" data-tex="${esc(seg)}">${esc(seg.replace(/^\$+|\$+$/g, ""))}</span>` :
+    seg.split(/(https:\/\/[^\s]+)/g).map((part, i) => (i % 2 ? `<a href="${esc(part)}" target="_blank" rel="noopener">${esc(part)}</a>` : chem(ltrRuns(esc(part))))).join(""))).join("");
 }
+let katexP = null;
+const loadKatex = () => katexP ||= new Promise((res, rej) => {
+  const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"; document.head.appendChild(l);
+  const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"; s.onload = () => res(window.katex); s.onerror = rej; document.head.appendChild(s); });
+const renderTex = () => { const els = $$(".tex:not([data-k])"); if (!els.length) return; loadKatex().then((K) => els.forEach((el) => { if (el.dataset.k) return; el.dataset.k = "1"; const src = el.dataset.tex, disp = src.startsWith("$$");
+  try { K.render(src.replace(/^\$+|\$+$/g, ""), el, { throwOnError: false, displayMode: disp }); } catch {} })).catch(() => {}); };
+// نص ثنائي اللغة: الإنجليزية يساراً والعربية يميناً (مثل منصة التدريب على الاختبارات)
+const bi = (ar, en) => (ar && en ? `<div class="bi"><div class="bi-en" dir="ltr" lang="en">${en}</div><div class="bi-ar" dir="rtl" lang="ar">${ar}</div></div>` : en && !ar ? `<div dir="ltr" lang="en">${en}</div>` : ar);
 // نص السؤال: أسطر متعددة + صورة اختيارية (رابط https أو صورة داخل مجلد images في المنصة)
 const imgSrc = (u) => { const v = String(u || "").trim(); return /^https:\/\//i.test(v) || /^images\/[\w.\-]+$/i.test(v) || /^file:[\w-]+$/.test(v) ? v : ""; };
 // صورة: رابط عادي، أو ملف مرفوع من الكمبيوتر (file:ID) يُحمَّل من قاعدة البيانات
@@ -121,7 +132,11 @@ function textBlock(t) {
     out.push(fl || (im ? `<div class="qimg">${im}</div>` : `<div class="ql">${inline(l) || "&nbsp;"}</div>`)); } });
   flush(); return out.join("");
 }
-const qText = (q) => textBlock(q.text) + (imgSrc(q.image) ? `<div class="qimg">${imgTag(q.image, 'loading="lazy"')}</div>` : "");
+const qText = (q, quiz = null) => { const P = quiz?.passages?.[q.passage];
+  return (P ? `<div class="passage">${P.title ? `<div class="pt">${inline(P.title)}</div>` : ""}${bi(P.ar ? textBlock(P.ar) : "", P.en ? textBlock(P.en) : "")}</div>` : "")
+    + bi(textBlock(q.text), q.text_en ? textBlock(q.text_en) : "") + (imgSrc(q.image) ? `<div class="qimg">${imgTag(q.image, 'loading="lazy"')}</div>` : ""); };
+const optHTML = (q, j) => { const a = q.options[j] && q.options[j] !== "—" ? q.options[j] : "", e = q.options_en?.[j] && q.options_en[j].trim() !== a.trim() ? q.options_en[j] : "";
+  return (a && !e && /^[\x00-\x7F]*$/.test(a) ? `<div dir="ltr" class="o-ltr">${inline(a)}</div>` : bi(a ? inline(a) : "", e ? inline(e) : "")) + (imgSrc(q.optionImages?.[j]) ? `<div class="oimg">${imgTag(q.optionImages[j], 'loading="lazy"')}</div>` : ""); };
 function rich(text) {
   return String(text || "").split("\n").map((line) => {
     const L = line.trim();
@@ -216,7 +231,7 @@ function bindImgInsert(root) {
 }
 // تحميل الصور المرفوعة تلقائياً أينما ظهرت + فتح الملفات عند الضغط عليها
 const hydrateImgs = () => $$("img[data-fid]:not([data-ld])").forEach((im) => { im.dataset.ld = "1"; fileUrl(im.dataset.fid).then((f) => (im.src = f.url)).catch(() => (im.alt = "تعذّر تحميل الصورة")); });
-new MutationObserver(hydrateImgs).observe(document.documentElement, { childList: true, subtree: true });
+new MutationObserver(() => { hydrateImgs(); renderTex(); }).observe(document.documentElement, { childList: true, subtree: true });
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-open-file]"); if (b) { e.preventDefault(); openFile(b.dataset.openFile); } });
 
 function classPicker(selected = []) {
@@ -258,6 +273,37 @@ function downloadCSV(name, rows) {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); a.download = name + ".csv"; a.click();
 }
 
+// تصدير ملف Excel حقيقي (xlsx) — من اليمين لليسار، والصف الأول عناوين بخط عريض
+async function downloadXlsx(name, rows, sheetName = "النتائج") {
+  try {
+    const JSZip = await (await import("./xlsx-import.js")).JSZipLib(); const z = new JSZip();
+    const x = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+    const colL = (i) => { let s = ""; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+    const widths = rows[0].map((_, c) => Math.min(60, Math.max(8, ...rows.map((r) => String(r[c] ?? "").length + 2))));
+    const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView rightToLeft="1" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols><sheetData>${rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => { const ref = colL(ci) + (ri + 1), st = ri ? "" : ' s="1"';
+      return typeof v === "number" && isFinite(v) ? `<c r="${ref}"${st}><v>${v}</v></c>` : `<c r="${ref}" t="inlineStr"${st}><is><t xml:space="preserve">${x(v)}</t></is></c>`; }).join("")}</row>`).join("")}</sheetData></worksheet>`;
+    z.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
+    z.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
+    z.file("xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${x(sheetName).slice(0, 31)}" sheetId="1" r:id="rId1"/></sheets></workbook>`);
+    z.file("xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+    z.file("xl/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Arial"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF89191E"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf/><xf fontId="1" fillId="2" applyFont="1" applyFill="1"/></cellXfs></styleSheet>`);
+    z.file("xl/worksheets/sheet1.xml", sheet);
+    const blob = await z.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name.replace(/[\\/:*?"<>|]/g, "-") + ".xlsx"; a.click();
+  } catch (e) { console.error(e); toast("تعذّر إنشاء ملف Excel — تم التصدير بصيغة CSV"); downloadCSV(name, rows); }
+}
+// تصدير PDF: صفحة طباعة منسقة (اختر «حفظ بتنسيق PDF» من نافذة الطباعة)
+function printTable(title, sub, rows) {
+  const w = window.open("", "_blank"); if (!w) return toast("اسمح بالنوافذ المنبثقة لتصدير PDF");
+  w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
+    <style>body{font-family:Tajawal,Arial,sans-serif;color:#383B3D;margin:24px}.hd{border-inline-start:10px solid #89191E;background:#F6DCCA;padding:12px 16px;border-radius:10px;margin-bottom:14px}.hd h1{margin:0;font-size:20px;color:#5C1014}.hd p{margin:4px 0 0;color:#455961}
+    table{width:100%;border-collapse:collapse;font-size:13px}th{background:#89191E;color:#fff;padding:7px}td{border-bottom:1px solid #EADFD3;padding:6px;text-align:center}tr:nth-child(even) td{background:#FCF3ED}.ft{margin-top:12px;font-size:11px;color:#455961}@page{size:A4 landscape;margin:12mm}</style></head>
+    <body><div class="hd"><h1>${esc(title)}</h1><p>${esc(SITE.school || "")} · ${esc(SITE.title)} · ${esc(sub || "")}</p></div><table><thead><tr>${rows[0].map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(1).map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>
+    <div class="ft">${esc(SITE.teacher)} — ${new Date().toLocaleString("ar-AE")}</div><script>document.fonts.ready.then(()=>setTimeout(()=>print(),300))<\/script></body></html>`);
+  w.document.close();
+}
+
 // ---------- الدخول ----------
 // رقم التواصل كرابط اتصال مباشر من الهاتف
 const phone = (cls = "") => (SITE.contact ? `<a class="${cls}" href="tel:${esc(String(SITE.contact).replace(/[^\d+]/g, ""))}" dir="ltr" style="color:inherit">📞 ${esc(SITE.contact)}</a>` : "");
@@ -276,6 +322,7 @@ function renderLogin(error = "", mode = "login", note = "") {
   $("#app").innerHTML = `
   <div class="login-wrap">${hero()}
     <div class="login-form"><div class="login-card">
+      <div class="lang-sw" style="margin:0 0 12px auto;width:max-content"><button type="button" data-lang="ar" class="${uiLang() === "ar" ? "on" : ""}">عربي</button><button type="button" data-lang="en" class="${uiLang() === "en" ? "on" : ""}">English</button></div>
       <div class="tabs"><button type="button" class="${reg ? "" : "on"}" data-m="login">تسجيل الدخول</button><button type="button" class="${reg ? "on" : ""}" data-m="register">طالب جديد؟ أنشئ حساباً</button></div>
       ${error ? `<div class="err">${esc(error)}</div>` : ""}${note ? `<div class="note">${esc(note)}</div>` : ""}
       ${reg ? `<form id="regForm" autocomplete="on">
@@ -294,6 +341,7 @@ function renderLogin(error = "", mode = "login", note = "") {
     </div></div>
   </div>`;
   $$(".tabs button").forEach((b) => (b.onclick = () => renderLogin("", b.dataset.m)));
+  $$(".login-card [data-lang]").forEach((b) => (b.onclick = () => { setUiLang(b.dataset.lang); renderLogin("", mode); }));
   if (reg) {
     $("#regForm").onsubmit = async (e) => {
       e.preventDefault(); const f = e.target, btn = $("button[type=submit]", f);
@@ -376,6 +424,7 @@ const IC = {
   labs: "M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7 15h10",
   assignments: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", calendar: "M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM16 3v4M8 3v4M3 10h18",
   announcements: "M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8", messages: "M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z",
+  record: "M12 8v4l3 2M3.05 11a9 9 0 1 1 .5 4M3 4v5h5",
   periodic: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z", calc: "M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM8 6h8v4H8zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" };
 // ألوان منصة المجمع: عنابي / برونزي / برتقالي / أخضر — [خلفية الأيقونة، لون الأيقونة، لون الشريط]
 const NAV_EL = new Proxy({ lessons: "#89191E", quizzes: "#A35D25", bank: "#E08A4F", assignments: "#2E7D5E", labs: "#731519", periodic: "#5C1014" }, {
@@ -385,26 +434,33 @@ const elChip = (k, cls = "el") => { const [bg, fg] = NAV_EL[k] || ["#e2e8f0", "#
 const TNAV = [["dash", "", "لوحة المتابعة"], ["students", "", "الطلاب"], ["attendance", "", "الحضور"], ["reports", "", "التقارير"], ["honor", "", "لوحة الشرف"],
   ["-", "المحتوى"], ["lessons", "", "الدروس"], ["quizzes", "", "الاختبارات"], ["bank", "", "بنك الأسئلة"], ["labs", "", "المختبر"], ["assignments", "", "الواجبات"], ["calendar", "", "التقويم"], ["announcements", "", "الإعلانات"],
   ["-", "التواصل والأدوات"], ["messages", "", "الرسائل"], ["periodic", "", "الجدول الدوري"], ["calc", "", "حاسبة الكيمياء"]];
-const SNAV = [["home", "", "الرئيسية"], ["progress", "", "تقدّمي"], ["honor", "", "لوحة الشرف"],
+const SNAV = [["home", "", "الرئيسية"], ["progress", "", "تقدّمي"], ["record", "", "سجل التدريب"], ["honor", "", "لوحة الشرف"],
   ["-", "التعلّم"], ["lessons", "", "الدروس"], ["quizzes", "", "الاختبارات"], ["bank", "", "بنك الأسئلة"], ["labs", "", "المختبر"], ["assignments", "", "الواجبات"], ["calendar", "", "التقويم"],
   ["-", "الأدوات والتواصل"], ["periodic", "", "الجدول الدوري"], ["calc", "", "حاسبة الكيمياء"], ["messages", "", "رسائل المعلم"]];
 
+// رأس الصفحة العلوي (مثل منصة التدريب على الاختبارات): الشعار + تبديل اللغة + المستخدم + خروج، وتحته شريط الأقسام
 function shell(active) {
   const nav = isTeacher() ? TNAV : SNAV;
-  const who = isTeacher() ? `<b>${esc(SITE.teacher)}</b>المعلم` : `<b>${esc(S.me.name)}</b>${esc(S.me.className || "")}`;
+  const name = isTeacher() ? SITE.teacher : S.me.name, role = isTeacher() ? "المعلم" : S.me.className || "طالب";
+  const ini = String(name || "?").replace(/^(أ\s*\/\s*|أ\.\s*)/, "").trim().charAt(0);
   $("#app").innerHTML = `
-  <div class="topbar"><b>${esc(SITE.title)}</b><button id="burger" aria-label="القائمة">☰</button></div>
-  <div class="shell">
-    <aside class="side" id="side">
-      <div class="brand"><div class="logo">${icSvg("labs", 24)}</div><div><b>${esc(SITE.title)}</b><small>${esc(SITE.teacher)}</small></div></div>
-      <nav class="nav">${nav.filter(([k]) => k !== "honor" || SITE.honor !== false || isTeacher()).map(([k, i, l]) => (k === "-" ? `<div class="nav-sec">${i}</div>` : `<a href="#/${k}" class="${active === k ? "on" : ""}" data-k="${k}">${elChip(k)} ${l}<span class="badge hidden"></span></a>`)).join("")}</nav>
-      <div class="me">${who}${!isTeacher() && SITE.contact ? `<br><small class="muted">المعلم: ${phone()}</small>` : ""}<br><button class="btn link" id="logout" style="padding:4px 0">تسجيل الخروج ↩</button></div>
-    </aside>
-    <main class="main" id="main"><div class="splash" style="min-height:40vh"><div class="spinner"></div></div></main>
-  </div>`;
+  <header class="apphead">
+    <div class="ah-in">
+      <a class="ah-brand" href="#/${isTeacher() ? "dash" : "home"}"><span class="logo">${icSvg("labs", 24)}</span><span><b>${esc(SITE.title)}</b><small>${esc(SITE.school || SITE.teacher)}</small></span></a>
+      <span class="spacer"></span>
+      <div class="lang-sw" role="group" aria-label="Language"><button type="button" data-lang="ar" class="${uiLang() === "ar" ? "on" : ""}">عربي</button><button type="button" data-lang="en" class="${uiLang() === "en" ? "on" : ""}">English</button></div>
+      <div class="ah-user"><span class="av">${esc(ini)}</span><span class="nm"><b>${esc(name)}</b><small>${esc(role)}${!isTeacher() && SITE.contact ? " · " : ""}${!isTeacher() && SITE.contact ? phone() : ""}</small></span></div>
+      <button class="ah-out" id="logout" title="تسجيل الخروج"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>تسجيل الخروج</span></button>
+      <button id="burger" class="ah-burger" aria-label="القائمة">☰</button>
+    </div>
+    <nav class="nav ah-nav" id="side">${nav.filter(([k]) => k !== "honor" || SITE.honor !== false || isTeacher()).map(([k, i, l]) => (k === "-" ? `<span class="nav-sep" title="${esc(i)}"></span>` : `<a href="#/${k}" class="${active === k ? "on" : ""}" data-k="${k}">${icSvg(k, 17)}<span>${l}</span><span class="badge hidden"></span></a>`)).join("")}</nav>
+  </header>
+  <main class="main" id="main"><div class="splash" style="min-height:40vh"><div class="spinner"></div></div></main>`;
   $("#logout").onclick = () => signOut(auth);
   $("#burger").onclick = () => $("#side").classList.toggle("open");
   $$(".nav a").forEach((a) => (a.onclick = () => $("#side").classList.remove("open")));
+  $$(".lang-sw [data-lang]").forEach((b) => (b.onclick = () => { setUiLang(b.dataset.lang); route(); }));
+  const on = $(".ah-nav a.on"); if (on) on.scrollIntoView({ block: "nearest", inline: "nearest" });
   Object.entries(S.badges || {}).forEach(([k, n]) => setBadge(k, n));
   return $("#main");
 }
@@ -426,7 +482,7 @@ async function route() {
     assignments: tAssignments, "assign-edit": tAssignEdit, "assign-subs": tAssignSubs, announcements: tAnnouncements, messages: tMessages, thread: tThread, lesson: sLesson,
     attendance: tAttendance, reports: tReports, report: tReport, honor: tHonor, bank: tBank, "bank-edit": tBankEdit, bankq: sBankQ, labs: tLabs, "lab-edit": tLabEdit, lab: sLab, calendar: pCalendar, periodic: pPeriodic, calc: pCalc };
   const St = { home: sHome, lessons: sLessons, lesson: sLesson, quizzes: sQuizzes, quiz: sQuiz, assignments: sAssignments, assign: sAssign, messages: sMessages,
-    progress: sProgress, honor: sHonor, bank: sBank, bankq: sBankQ, labs: sLabs, lab: sLab, calendar: pCalendar, periodic: pPeriodic, calc: pCalc };
+    progress: sProgress, record: sRecord, honor: sHonor, bank: sBank, bankq: sBankQ, labs: sLabs, lab: sLab, calendar: pCalendar, periodic: pPeriodic, calc: pCalc };
   const fn = (isTeacher() ? T : St)[page] || (isTeacher() ? tDash : sHome);
   const navKey = { "lesson-edit": "lessons", lesson: "lessons", "quiz-edit": "quizzes", "quiz-results": "quizzes", quiz: "quizzes", "assign-edit": "assignments", "assign-subs": "assignments", assign: "assignments", thread: "messages", report: "reports", "bank-edit": "bank", bankq: "bank", "lab-edit": "labs", lab: "labs" }[page] || page;
   const main = shell(navKey);
@@ -465,7 +521,7 @@ async function rebuildCatalog() {
   const pick = (o, ks) => Object.fromEntries(ks.filter((k) => o[k] !== undefined && o[k] !== null).map((k) => [k, o[k]]));
   await setDoc(doc(db, "meta", "catalog"), {
     lessons: l.filter((x) => x.published).map((x) => ({ ...pick(x, ["id", "title", "unit", "order", "classes", "createdAt"]), v: !!x.videoUrl, p: !!x.pdfUrl || !!x.attachments?.length })),
-    quizzes: q.filter((x) => x.published).map((x) => pick(x, ["id", "title", "count", "classes", "open", "showResults", "timeLimit", "totalPoints", "createdAt"])),
+    quizzes: q.filter((x) => x.published).map((x) => pick(x, ["id", "title", "count", "classes", "open", "showResults", "timeLimit", "totalPoints", "createdAt", "term", "unlimited", "passPct", "calculator", "bilingual"])),
     assignments: a.filter((x) => x.published).map((x) => pick(x, ["id", "title", "due", "maxGrade", "classes", "createdAt"])),
     announcements: an.sort(byDate).slice(0, 30).map((x) => pick(x, ["id", "title", "body", "attachments", "classes", "createdAt"])),
     banks: bk.filter((x) => x.published).map((x) => pick(x, ["id", "title", "unit", "count", "classes", "createdAt"])),
@@ -709,12 +765,15 @@ function parseBulk(text) {
 }
 async function tQuizEdit(main, id) {
   const isNew = id === "new";
-  let q = { title: "", description: "", classes: isNew ? newCls() : [], published: false, open: true, showResults: true, timeLimit: 0, shuffle: false };
-  let questions = [{ text: "", options: ["", "", "", ""], answer: 0, explanation: "", image: "", points: 1 }];
+  let q = { title: "", description: "", classes: isNew ? newCls() : [], published: false, open: true, showResults: true, timeLimit: 0, shuffle: false,
+    passPct: 50, unlimited: true, shuffleOpts: false, backtrack: true, seenAll: true, calculator: true, term: "", passages: {} };
+  const blankQ = () => ({ text: "", text_en: "", options: ["", "", "", ""], options_en: ["", "", "", ""], answer: 0, explanation: "", image: "", points: 1, outcome: "", ocode: "" });
+  let questions = [blankQ()];
   if (!isNew) {
     const [qs, ks] = await Promise.all([getDoc(doc(db, "quizzes", id)), getDoc(doc(db, "quizKeys", id))]);
     if (!qs.exists()) return go("quizzes"); q = { ...q, ...qs.data() }; const key = ks.exists() ? ks.data() : { answers: [], explanations: [] };
-    questions = (q.questions || []).map((x, i) => ({ text: x.text, options: x.options, image: x.image || "", points: x.points || 1, outcome: x.outcome || "", ocode: x.ocode || "", answer: key.answers[i] ?? 0, explanation: key.explanations?.[i] || "" }));
+    if (q.unlimited === undefined) q.unlimited = false;
+    questions = (q.questions || []).map((x, i) => ({ ...x, text_en: x.text_en || "", options_en: x.options.map((_, j) => x.options_en?.[j] || ""), image: x.image || "", points: x.points || 1, outcome: x.outcome || "", ocode: x.ocode || "", answer: key.answers[i] ?? 0, explanation: key.explanations?.[i] || "" }));
   }
   main.innerHTML = `<div class="page-head"><h1>${isNew ? "اختبار جديد" : "تعديل الاختبار"}</h1><div class="row">${isNew ? "" : `<a class="btn ghost" href="#/quiz-results/${id}">النتائج</a>`}<a class="btn ghost" href="#/quizzes">رجوع</a></div></div>
   <form id="qf">
@@ -726,11 +785,18 @@ async function tQuizEdit(main, id) {
     <div class="grid g3"><div class="field"><label>زمن الاختبار بالدقائق <span class="muted">(0 = بدون وقت)</span></label><input type="number" name="time" min="0" max="600" value="${q.timeLimit || 0}"></div>
       <div class="field"><label>الدرجة الكلية</label><input type="text" id="totpts" disabled></div>
       <div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" name="shuffle" ${q.shuffle ? "checked" : ""}> ترتيب عشوائي للأسئلة لكل طالب</label></div></div>
+    <div class="grid g3"><div class="field"><label>نسبة النجاح %</label><input type="number" name="pass" min="0" max="100" value="${q.passPct ?? 50}"></div>
+      <div class="field"><label>الفصل الدراسي</label><select name="term"><option value="">—</option>${["Term 1", "Term 2", "Term 3"].map((t) => `<option ${q.term === t ? "selected" : ""}>${t}</option>`).join("")}${q.term && !["Term 1", "Term 2", "Term 3"].includes(q.term) ? `<option selected>${esc(q.term)}</option>` : ""}</select></div>
+      <div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" name="unl" ${q.unlimited ? "checked" : ""}> محاولات غير محدودة (تُحتسب أفضل نتيجة)</label></div></div>
     <div class="row" style="gap:22px"><label class="check"><input type="checkbox" name="pub" ${q.published ? "checked" : ""}> نشر للطلاب</label>
       <label class="check"><input type="checkbox" name="open" ${q.open ? "checked" : ""}> مفتوح لاستقبال الإجابات</label>
       <label class="check"><input type="checkbox" name="show" ${q.showResults ? "checked" : ""}> يرى الطالب درجته والحلول بعد التسليم</label></div>
+    <div class="row" style="gap:22px;margin-top:8px"><label class="check"><input type="checkbox" name="sopt" ${q.shuffleOpts ? "checked" : ""}> ترتيب عشوائي للخيارات</label>
+      <label class="check"><input type="checkbox" name="back" ${q.backtrack !== false ? "checked" : ""}> السماح بالرجوع للأسئلة السابقة</label>
+      <label class="check"><input type="checkbox" name="seen" ${q.seenAll !== false ? "checked" : ""}> يجب الاطلاع على كل الأسئلة قبل التسليم</label>
+      <label class="check"><input type="checkbox" name="calc" ${q.calculator ? "checked" : ""}> الآلة الحاسبة مسموحة</label></div>
   </div>
-  <div class="card"><div class="row" style="margin-bottom:10px"><h3 style="margin:0">الأسئلة (<span id="qc"></span>)</h3><span class="spacer"></span><button type="button" class="btn ghost sm" id="paste">📋 لصق أسئلة جاهزة</button></div>
+  <div class="card"><div class="row" style="margin-bottom:10px"><h3 style="margin:0">الأسئلة (<span id="qc"></span>)</h3><span class="spacer"></span><label class="btn sm" title="نفس قالب Excel المستخدم في منصة التدريب على الاختبارات">📥 رفع من ملف Excel<input type="file" id="xlsIn" accept=".xlsx,.xlsm" hidden></label><a class="btn ghost sm" href="templates/exam-template.xlsx" download>⬇ قالب Excel</a><button type="button" class="btn ghost sm" id="paste">📋 لصق أسئلة جاهزة</button></div>
     <div id="qs"></div><button type="button" class="btn ghost" id="addq">+ إضافة سؤال</button></div>
   <div class="row"><span class="spacer"></span>${isNew ? "" : `<button type="button" class="btn ghost" id="del" style="color:var(--danger)">حذف الاختبار</button>`}<button class="btn" id="save">حفظ الاختبار</button></div>
   </form>`;
@@ -739,7 +805,8 @@ async function tQuizEdit(main, id) {
     $("#qc").textContent = questions.length; $("#totpts").value = questions.reduce((a, x) => a + (+x.points || 1), 0) + " درجة";
     $("#qs").innerHTML = questions.map((x, i) => `<div class="qedit" data-i="${i}">
       <div class="row" style="margin-bottom:8px"><b>سؤال ${i + 1}</b><span class="spacer"></span><button type="button" class="btn link sm" data-up="${i}">↑</button><button type="button" class="btn link sm" data-dn="${i}">↓</button><button type="button" class="btn link sm danger" data-rm="${i}">حذف</button></div>
-      <textarea data-f="text" style="min-height:60px" placeholder="نص السؤال (يمكن كتابة أكثر من سطر)">${esc(x.text)}</textarea>
+      ${x.passage && q.passages?.[x.passage] ? `<div class="pill gray" style="margin-bottom:6px">مرتبط بالنص ${esc(x.passage)}: ${esc(q.passages[x.passage].title || "")}</div>` : ""}
+      <div class="bi-edit"><textarea data-f="text_en" dir="ltr" style="min-height:60px" placeholder="Question (English)">${esc(x.text_en || "")}</textarea><textarea data-f="text" dir="rtl" style="min-height:60px" placeholder="نص السؤال بالعربية (يمكن كتابة أكثر من سطر)">${esc(x.text)}</textarea></div>
       <div class="row" style="margin-top:6px;flex-wrap:nowrap"><label style="margin:0;white-space:nowrap">الدرجة</label><input type="number" data-f="points" min="0.5" step="0.5" value="${x.points || 1}" style="width:80px">
         <input type="text" data-f="image" dir="ltr" value="${esc(x.image || "")}" placeholder="صورة للسؤال (اختياري): رابط https أو ارفعها ←" style="flex:1">
         <label class="btn ghost sm" style="white-space:nowrap">رفع صورة أو ملف<input type="file" hidden data-qimg="${i}"></label></div>
@@ -747,7 +814,7 @@ async function tQuizEdit(main, id) {
       <div class="row" style="margin-top:6px;flex-wrap:nowrap"><input type="text" data-f="outcome" value="${esc(x.outcome || "")}" placeholder="ناتج التعلم (اختياري)" style="flex:2"><input type="text" data-f="ocode" dir="ltr" value="${esc(x.ocode || "")}" placeholder="CHM.5.5.01.001.07" style="flex:1"></div>
       <p class="hint" style="margin:6px 0">اختر الدائرة بجانب الإجابة الصحيحة:</p>
       <div class="opts">${x.options.map((o, j) => `<input type="radio" name="ans${i}" value="${j}" ${x.answer === j ? "checked" : ""} style="accent-color:var(--ok);width:18px;height:18px">
-        <div class="row" style="flex-wrap:nowrap"><input type="text" data-o="${j}" value="${esc(o)}" placeholder="الخيار ${LETTERS[j]}">${x.options.length > 2 ? `<button type="button" class="btn link sm danger" data-ro="${j}">✕</button>` : ""}</div>`).join("")}</div>
+        <div class="row bi-row" style="flex-wrap:nowrap"><input type="text" data-oe="${j}" dir="ltr" value="${esc(x.options_en?.[j] || "")}" placeholder="Option ${SA_L[j].toUpperCase()}"><input type="text" data-o="${j}" dir="rtl" value="${esc(o)}" placeholder="الخيار ${LETTERS[j]}">${imgSrc(x.optionImages?.[j]) ? `<span class="oimg sm">${imgTag(x.optionImages[j])}</span>` : ""}${x.options.length > 2 ? `<button type="button" class="btn link sm danger" data-ro="${j}">✕</button>` : ""}</div>`).join("")}</div>
       ${x.options.length < 6 ? `<button type="button" class="btn link sm" data-ao>+ خيار</button>` : ""}
       <input type="text" data-f="explanation" value="${esc(x.explanation)}" placeholder="شرح الإجابة (اختياري — يظهر للطالب بعد التسليم)" style="margin-top:8px">
     </div>`).join("");
@@ -755,7 +822,8 @@ async function tQuizEdit(main, id) {
   const sync = () => $$(".qedit").forEach((el) => {
     const x = questions[+el.dataset.i]; x.text = $('[data-f=text]', el).value; x.explanation = $('[data-f=explanation]', el).value;
     x.points = +$('[data-f=points]', el).value || 1; x.image = $('[data-f=image]', el).value.trim(); x.outcome = $('[data-f=outcome]', el).value.trim(); x.ocode = $('[data-f=ocode]', el).value.trim();
-    x.options = $$("[data-o]", el).map((i) => i.value); const r = $(`input[name=ans${el.dataset.i}]:checked`, el); x.answer = r ? +r.value : 0;
+    x.options = $$("[data-o]", el).map((i) => i.value); x.options_en = $$("[data-oe]", el).map((i) => i.value); x.text_en = $('[data-f=text_en]', el).value;
+    const r = $(`input[name=ans${el.dataset.i}]:checked`, el); x.answer = r ? +r.value : 0;
   });
   draw();
   const att = bindAttach($("#qf"), q.attachments);
@@ -772,12 +840,12 @@ async function tQuizEdit(main, id) {
     if (b.dataset.rm != null) questions.splice(qi, 1);
     else if (b.dataset.up != null && qi > 0) [questions[qi - 1], questions[qi]] = [questions[qi], questions[qi - 1]];
     else if (b.dataset.dn != null && qi < questions.length - 1) [questions[qi + 1], questions[qi]] = [questions[qi], questions[qi + 1]];
-    else if (b.dataset.ao != null) questions[qi].options.push("");
-    else if (b.dataset.ro != null) { const j = +b.dataset.ro; questions[qi].options.splice(j, 1); if (questions[qi].answer >= questions[qi].options.length) questions[qi].answer = 0; else if (questions[qi].answer > j) questions[qi].answer--; }
+    else if (b.dataset.ao != null) { questions[qi].options.push(""); questions[qi].options_en.push(""); }
+    else if (b.dataset.ro != null) { const j = +b.dataset.ro; questions[qi].options.splice(j, 1); questions[qi].options_en.splice(j, 1); questions[qi].optionImages?.splice(j, 1); if (questions[qi].answer >= questions[qi].options.length) questions[qi].answer = 0; else if (questions[qi].answer > j) questions[qi].answer--; }
     draw();
   };
   $("#qs").onchange = () => { sync(); $("#totpts").value = questions.reduce((a, x) => a + (+x.points || 1), 0) + " درجة"; };
-  $("#addq").onclick = () => { sync(); questions.push({ text: "", options: ["", "", "", ""], answer: 0, explanation: "", image: "", points: 1 }); draw(); $$(".qedit").pop().scrollIntoView({ behavior: "smooth" }); };
+  $("#addq").onclick = () => { sync(); questions.push(blankQ()); draw(); $$(".qedit").pop().scrollIntoView({ behavior: "smooth" }); };
   $("#paste").onclick = () => {
     openModal(`<h2>لصق أسئلة جاهزة</h2><p class="muted">اكتب أو الصق الأسئلة بهذا الشكل، مع ترك سطر فارغ بين كل سؤال والآخر:</p>
       <pre style="background:#f4f6fa;padding:10px;border-radius:10px;font-family:inherit;white-space:pre-wrap">1- ما عدد مولات الأكسجين في 32 g من O_2 ؟
@@ -793,14 +861,54 @@ async function tQuizEdit(main, id) {
     $("#doparse").onclick = () => {
       const got = parseBulk($("#bulkq").value);
       if (!got.length) { $("#perr").innerHTML = `<div class="err">لم أتعرف على أي سؤال. تأكد من الشكل وأن بين الأسئلة سطراً فارغاً.</div>`; return; }
-      sync(); questions = questions.filter((x) => x.text.trim() || x.options.some((o) => o.trim())); questions.push(...got.map((g) => ({ ...g, answer: g.answer < 0 ? 0 : g.answer })));
+      sync(); questions = questions.filter((x) => x.text.trim() || x.options.some((o) => o.trim())); questions.push(...got.map((g) => ({ ...g, text_en: "", options_en: g.options.map(() => ""), answer: g.answer < 0 ? 0 : g.answer })));
       closeModal(); draw(); const miss = got.filter((g) => g.answer < 0).length;
       toast(`تمت إضافة ${got.length} سؤال` + (miss ? ` — ${miss} بدون إجابة محددة، راجعها` : ""));
     };
   };
+  // رفع الأسئلة من ملف Excel (قالب منصة التدريب على الاختبارات: Exam_Info + Passages + Questions)
+  $("#xlsIn").onchange = async (e) => {
+    const file = e.target.files[0]; e.target.value = ""; if (!file) return;
+    let R; try { toast("جارٍ قراءة الملف..."); R = await (await import("./xlsx-import.js")).parseExamXlsx(await file.arrayBuffer()); }
+    catch (err) { console.error(err); return openModal(`<h2>تعذّرت قراءة الملف</h2><div class="err">${esc(err.message || err)}</div><button class="btn ghost" data-close>إغلاق</button>`); }
+    const c = R.config, nImg = Object.keys(R.images).length, nBi = R.questions.filter((x) => x.text_en).length;
+    const marks = R.questions.reduce((a, x) => a + x.points, 0), nOc = new Set(R.questions.map((x) => x.ocode || x.outcome).filter(Boolean)).size;
+    openModal(`<h2>رفع من Excel: ${esc(file.name)}</h2>
+      <div class="grid g4" style="margin:10px 0"><div class="stat"><div class="n">${R.questions.length}</div><div class="l">سؤال</div></div><div class="stat"><div class="n">${marks}</div><div class="l">درجة</div></div>
+        <div class="stat"><div class="n">${nImg}</div><div class="l">صورة</div></div><div class="stat"><div class="n">${nOc}</div><div class="l">ناتج تعلم</div></div></div>
+      <p class="muted">${nBi} سؤال ثنائي اللغة · ${Object.keys(R.passages).length} نص قراءة${c.title ? ` · العنوان: <b>${esc(c.title)}</b>` : ""}${c.duration ? ` · ${c.duration} دقيقة` : ""} · النجاح ${c.passPct}%${c.term ? ` · ${esc(c.term)}` : ""}</p>
+      ${R.errors.length ? `<div class="err"><b>صفوف لم تُضف (${R.errors.length}):</b><br>${R.errors.slice(0, 15).map(esc).join("<br>")}${R.errors.length > 15 ? "<br>…" : ""}</div>` : ""}
+      ${R.warnings.length ? `<details style="margin:8px 0"><summary class="muted">ملاحظات (${R.warnings.length})</summary><div class="muted" style="font-size:13px">${R.warnings.slice(0, 30).map(esc).join("<br>")}</div></details>` : ""}
+      ${R.questions.length ? `<div class="row" style="gap:18px;margin:10px 0"><label class="check"><input type="radio" name="xm" value="replace" checked> استبدال الأسئلة الحالية</label><label class="check"><input type="radio" name="xm" value="append"> إضافتها بعد الأسئلة الحالية</label></div>
+        <label class="check"><input type="checkbox" id="xcfg" checked> تطبيق إعدادات ورقة Exam_Info (العنوان، الزمن، النجاح، الترتيب العشوائي…)</label>
+        <div id="xprog" class="muted" style="margin-top:8px"></div>
+        <div class="row" style="margin-top:12px"><button class="btn" id="xgo">إضافة ${R.questions.length} سؤال</button><button class="btn ghost" data-close>إلغاء</button></div>` : `<button class="btn ghost" data-close>إغلاق</button>`}`, "wide");
+    if (!R.questions.length) return;
+    $("#xgo").onclick = async (ev) => {
+      busy(ev.target, true); const mode = $('input[name=xm]:checked').value, applyCfg = $("#xcfg").checked;
+      try {
+        // رفع الصور المستخرجة من الملف إلى المنصة
+        const up = {}; let k = 0;
+        for (const [key, m] of Object.entries(R.images)) { $("#xprog").textContent = `جارٍ رفع الصور ${++k} من ${nImg}...`; const a = await uploadFile(new File([m.blob], `q-${key}.${m.ext}`, { type: m.blob.type })); up[key] = "file:" + a.id; }
+        const fix = (v) => (v && v.startsWith("@") ? up[v.slice(1)] || "" : v || "");
+        const got = R.questions.map((x) => ({ ...x, image: fix(x.image), optionImages: x.optionImages.map(fix), options_en: x.options_en.length ? x.options_en : x.options.map(() => "") }));
+        sync();
+        if (mode === "replace") questions = got; else { questions = questions.filter((x) => x.text.trim() || x.options.some((o) => o.trim())); questions.push(...got); }
+        q.passages = { ...(q.passages || {}), ...R.passages };
+        const f = $("#qf");
+        if (applyCfg) {
+          if (c.title) f.title.value = c.title; if (c.extra) f.desc.value = c.extra;
+          f.time.value = c.duration || 0; f.pass.value = c.passPct; f.shuffle.checked = c.shuffle; f.sopt.checked = c.shuffleOpts; f.back.checked = c.backtrack; f.seen.checked = c.seenAll; f.calc.checked = c.calculator; f.show.checked = c.review;
+          if (c.term) { if (![...f.term.options].some((o) => o.value === c.term)) f.term.add(new Option(c.term, c.term)); f.term.value = c.term; }
+        }
+        closeModal(); draw(); toast(`تمت إضافة ${got.length} سؤال من Excel ✓ — راجعها ثم اضغط «حفظ الاختبار»`);
+      } catch (err) { console.error(err); busy(ev.target, false); $("#xprog").innerHTML = `<div class="err">${esc(err.message || errMsg(err))}</div>`; }
+    };
+  };
   $("#qf").onsubmit = async (e) => {
     e.preventDefault(); sync(); const f = e.target;
-    const clean = questions.map((x) => ({ ...x, text: x.text.trim(), options: x.options.map((o) => o.trim()) }));
+    const clean = questions.map((x) => { const t = x.text.trim(), te = (x.text_en || "").trim(), oe = (x.options_en || []).map((o) => (o || "").trim());
+      return { ...x, text: t || te, text_en: t ? te : "", options: x.options.map((o, j) => o.trim() || oe[j] || (imgSrc(x.optionImages?.[j]) ? "—" : "")), options_en: x.options.map((o, j) => (o.trim() ? oe[j] : "")) }; });
     const bad = clean.findIndex((x) => !x.text || x.options.some((o) => !o));
     if (!clean.length) return toast("أضف سؤالاً واحداً على الأقل");
     if (bad >= 0) { toast(`أكمل نص السؤال ${bad + 1} وجميع خياراته`); $$(".qedit")[bad].scrollIntoView({ behavior: "smooth" }); return; }
@@ -809,7 +917,12 @@ async function tQuizEdit(main, id) {
     const points = clean.map((x) => +x.points || 1);
     const pub = { title: f.title.value.trim(), description: f.desc.value.trim(), attachments: att.get(), classes: pickedClasses(f), published: f.pub.checked, open: f.open.checked, showResults: f.show.checked,
       timeLimit: Math.max(0, Math.round(+f.time.value || 0)), shuffle: f.shuffle.checked, totalPoints: points.reduce((a, b) => a + b, 0),
-      questions: clean.map((x, i) => ({ text: x.text, options: x.options, points: points[i], ...(x.image ? { image: x.image } : {}), ...(x.outcome ? { outcome: x.outcome } : {}), ...(x.ocode ? { ocode: x.ocode } : {}) })), count: clean.length };
+      passPct: Math.min(100, Math.max(0, Math.round(+f.pass.value || 50))), term: f.term.value, unlimited: f.unl.checked, shuffleOpts: f.sopt.checked, backtrack: f.back.checked, seenAll: f.seen.checked, calculator: f.calc.checked,
+      bilingual: clean.some((x) => x.text_en || x.options_en.some(Boolean)), passages: Object.fromEntries(Object.entries(q.passages || {}).filter(([pid]) => clean.some((x) => x.passage === pid))),
+      questions: clean.map((x, i) => { const o = { text: x.text, options: x.options, points: points[i] };
+        for (const k of ["text_en", "image", "outcome", "ocode", "topic", "section", "hint", "passage"]) if (x[k]) o[k] = x[k];
+        if (x.options_en.some(Boolean)) o.options_en = x.options_en; if (x.optionImages?.some((v) => imgSrc(v))) o.optionImages = x.options.map((_, j) => x.optionImages[j] || "");
+        return o; }), count: clean.length };
     const key = { answers: clean.map((x) => x.answer), explanations: clean.map((x) => x.explanation.trim()), points };
     try {
       let qid = id;
@@ -820,45 +933,58 @@ async function tQuizEdit(main, id) {
   };
   if (!isNew) $("#del").onclick = async () => {
     if (!confirm("حذف الاختبار وجميع إجابات الطلاب عليه؟")) return;
-    const subs = await list(query(col("submissions"), where("quizId", "==", id)));
-    await commitChunks(subs.flatMap((x) => [(b) => b.delete(doc(db, "submissions", x.id)), (b) => b.delete(doc(db, "starts", x.id)), ...undoSub(x)]));
+    const [subs, atts] = await Promise.all([list(query(col("submissions"), where("quizId", "==", id))), list(query(col("attempts"), where("quizId", "==", id))).catch(() => [])]);
+    await commitChunks(subs.flatMap((x) => [(b) => b.delete(doc(db, "submissions", x.id)), (b) => b.delete(doc(db, "starts", x.id)), ...wipeAttempts(x, atts), ...undoSub(x)]));
     const b = writeBatch(db); b.delete(doc(db, "quizzes", id)); b.delete(doc(db, "quizKeys", id)); await b.commit();
     await rebuildCatalog(); toast("تم الحذف"); go("quizzes");
   };
 }
+// حذف كل محاولات طالب على اختبار (لإعادة الحل من البداية أو عند حذف الاختبار)
+const wipeAttempts = (x, atts) => { const mine = atts.filter((a) => a.studentId === x.studentId && a.quizId === x.quizId);
+  return [...mine.map((a) => (b) => b.delete(doc(db, "attempts", a.id))), ...mine.filter((a) => a.n > 1).map((a) => (b) => b.delete(doc(db, "starts", `${a.quizId}_${a.studentId}_${a.n}`)))]; };
 async function tQuizResults(main, id) {
-  const [qs, ks, subs] = await Promise.all([getDoc(doc(db, "quizzes", id)), getDoc(doc(db, "quizKeys", id)), list(query(col("submissions"), where("quizId", "==", id)))]);
+  const [qs, ks, subs, atts] = await Promise.all([getDoc(doc(db, "quizzes", id)), getDoc(doc(db, "quizKeys", id)), list(query(col("submissions"), where("quizId", "==", id))), list(query(col("attempts"), where("quizId", "==", id))).catch(() => [])]);
   if (!qs.exists()) return go("quizzes");
   const q = qs.data(), key = ks.data() || { answers: [] }, n = (q.questions || []).length;
   const students = await studentsIn(q.classes);
   const target = students.filter((s) => s.active && (!q.classes?.length || q.classes.includes(s.className)));
   const sMap = Object.fromEntries(students.map((s) => [s.id, s]));
-  const rows = subs.map((x) => ({ x, s: sMap[x.studentId] || { name: "(طالب من صف آخر أو محذوف)" }, sc: scoreOf(x, key) })).sort((a, b) => b.sc.pct - a.sc.pct);
+  const rows = subs.map((x) => { const my = attemptsFor(x, atts.filter((a) => a.studentId === x.studentId)); const scored = my.map((a) => ({ a, sc: scoreOf(a, key) }));
+    const best = scored.reduce((b, c) => (!b || c.sc.pct > b.sc.pct ? c : b), null), first = scored[0], last = scored[scored.length - 1];
+    return { x, s: sMap[x.studentId] || { name: "(طالب من صف آخر أو محذوف)" }, sc: best.sc, best, first, last, tries: scored.length, all: scored }; }).sort((a, b) => b.sc.pct - a.sc.pct);
   const missing = target.filter((s) => !subs.some((x) => x.studentId === s.id));
   const avg = rows.length ? Math.round(rows.reduce((a, r) => a + r.sc.pct, 0) / rows.length) : 0;
-  const qStats = (q.questions || []).map((qq, i) => (subs.length ? Math.round((subs.filter((x) => answersOf(x, n)[i] === key.answers[i]).length / subs.length) * 100) : 0));
+  const passedN = rows.filter((r) => r.sc.right >= passOf(q, r.sc.total)).length;
+  const qStats = (q.questions || []).map((qq, i) => (rows.length ? Math.round((rows.filter((r) => answersOf(r.best.a, n)[i] === key.answers[i]).length / rows.length) * 100) : 0));
 
-  main.innerHTML = `<div class="page-head"><div><h1>نتائج: ${esc(q.title)}</h1><p class="sub">${q.count} سؤال · سلّمه ${subs.length} من ${target.length}</p></div>
-    <div class="row"><button class="btn ghost" id="csv">⬇ تصدير Excel</button><button class="btn ghost" id="tog">${q.open ? "إغلاق الاختبار" : "فتح الاختبار"}</button><a class="btn ghost" href="#/quizzes">رجوع</a></div></div>
-  <div class="grid g3" style="margin-bottom:16px"><div class="stat"><div class="n">${avg}%</div><div class="l">متوسط الدرجات</div></div>
-    <div class="stat"><div class="n">${subs.length}</div><div class="l">سلّموا</div></div><div class="stat"><div class="n">${missing.length}</div><div class="l">لم يسلّموا</div></div></div>
+  main.innerHTML = `<div class="page-head"><div><h1>نتائج: ${esc(q.title)}</h1><p class="sub">${q.count} سؤال · سلّمه ${subs.length} من ${target.length}${q.unlimited ? " · محاولات غير محدودة (تُعرض أفضل نتيجة)" : ""}</p></div>
+    <div class="row"><button class="btn ghost" id="xl">⬇ Excel</button><button class="btn ghost" id="pdf">⬇ PDF</button><button class="btn ghost" id="tog">${q.open ? "إغلاق الاختبار" : "فتح الاختبار"}</button><a class="btn ghost" href="#/quizzes">رجوع</a></div></div>
+  <div class="grid g4" style="margin-bottom:16px"><div class="stat"><div class="n">${avg}%</div><div class="l">متوسط أفضل الدرجات</div></div>
+    <div class="stat"><div class="n">${subs.length}</div><div class="l">سلّموا</div></div><div class="stat"><div class="n">${passedN}</div><div class="l">ناجح (${q.passPct ?? 50}%)</div></div><div class="stat"><div class="n">${missing.length}</div><div class="l">لم يسلّموا</div></div></div>
   <div class="card"><div class="row" style="margin-bottom:8px"><h3 style="margin:0">الدرجات</h3><span class="spacer"></span><input type="text" id="sq" placeholder="بحث بالاسم..." style="max-width:200px"></div>
-    ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>الطالب</th><th>الصف</th><th>الدرجة</th><th>النسبة</th><th>وقت التسليم</th><th></th></tr></thead><tbody>
-    ${rows.map((r) => `<tr data-n="${esc(r.s.name)}"><td><b>${esc(r.s.name)}</b></td><td>${esc(r.s.className || "")}</td><td>${r.sc.right} من ${r.sc.total}</td><td>${pctPill(r.sc.pct)}</td><td class="muted">${fmt(r.x.submittedAt)}</td>
-    <td style="white-space:nowrap"><button class="btn link sm" data-view="${r.x.id}">الإجابات</button><button class="btn link sm danger" data-redo="${r.x.id}">السماح بإعادة الحل</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">لا توجد تسليمات بعد.</p>`}</div>
+    ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>الطالب</th><th>الصف</th><th>أفضل درجة</th><th>النسبة</th><th>النتيجة</th><th>المحاولات</th><th>أول محاولة</th><th>آخر تسليم</th><th></th></tr></thead><tbody>
+    ${rows.map((r) => { const ps = r.sc.right >= passOf(q, r.sc.total); return `<tr data-n="${esc(r.s.name)}"><td><b>${esc(r.s.name)}</b></td><td>${esc(r.s.className || "")}</td><td>${r.sc.right} من ${r.sc.total}</td><td>${pctPill(r.sc.pct)}</td><td><span class="pill ${ps ? "ok" : "bad"}">${ps ? "ناجح" : "راسب"}</span></td><td>${r.tries}</td><td class="muted">${r.first.sc.pct}%</td><td class="muted">${fmt(r.last.a.submittedAt)}</td>
+    <td style="white-space:nowrap"><button class="btn link sm" data-view="${r.x.id}">الإجابات</button><button class="btn link sm danger" data-redo="${r.x.id}">حذف المحاولات</button></td></tr>`; }).join("")}</tbody></table></div>` : `<p class="muted">لا توجد تسليمات بعد.</p>`}</div>
   ${missing.length ? `<details class="card"><summary style="cursor:pointer"><b>لم يسلّموا بعد (${missing.length})</b></summary><div class="row" style="margin-top:10px">${missing.map((s) => `<span class="pill gray">${esc(s.name)}</span>`).join("")}</div></details>` : ""}
-  ${subs.length ? `<div class="card"><h3>تحليل الأسئلة — نسبة الإجابات الصحيحة</h3>${(q.questions || []).map((qq, i) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--brand-soft);color:var(--brand);font-size:13px">${i + 1}</span><span style="flex:1">${inline(String(qq.text).split("\n")[0])}</span>${pctPill(qStats[i])}</div>`).join("")}</div>` : ""}`;
+  ${rows.length ? `<div class="card"><h3>تحليل الأسئلة — نسبة الإجابات الصحيحة (أفضل محاولة)</h3>${(q.questions || []).map((qq, i) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--brand-soft);color:var(--brand);font-size:13px">${i + 1}</span><span style="flex:1">${inline(String(qq.text).split("\n")[0])}${qq.ocode ? ` <small class="muted" dir="ltr">${esc(qq.ocode)}</small>` : ""}</span>${pctPill(qStats[i])}</div>`).join("")}</div>` : ""}`;
 
   $("#tog").onclick = async () => { await updateDoc(doc(db, "quizzes", id), { open: !q.open }); await rebuildCatalog(); toast(q.open ? "تم إغلاق الاختبار" : "تم فتح الاختبار"); route(); };
   if ($("#sq")) $("#sq").oninput = (e) => $$("tbody tr[data-n]", main).forEach((tr) => tr.classList.toggle("hidden", !tr.dataset.n.includes(e.target.value.trim())));
   $$("[data-redo]", main).forEach((b) => (b.onclick = async () => {
-    if (!confirm("حذف إجابة هذا الطالب ليتمكن من حل الاختبار مرة أخرى؟")) return;
+    if (!confirm("حذف جميع محاولات هذا الطالب ليبدأ الاختبار من جديد؟")) return;
     const x = subs.find((y) => y.id === b.dataset.redo);
-    await commitChunks([(wb) => wb.delete(doc(db, "submissions", x.id)), (wb) => wb.delete(doc(db, "starts", x.id)), ...undoSub(x)]); toast("يمكن للطالب إعادة الحل الآن"); route();
+    await commitChunks([(wb) => wb.delete(doc(db, "submissions", x.id)), (wb) => wb.delete(doc(db, "starts", x.id)), ...wipeAttempts(x, atts), ...undoSub(x)]); toast("تم — يمكن للطالب البدء من جديد"); route();
   }));
-  $$("[data-view]", main).forEach((b) => (b.onclick = () => { const r = rows.find((r) => r.x.id === b.dataset.view); openModal(`<div class="row"><h2 style="margin:0">${esc(r.s.name)}</h2><span class="spacer"></span><button class="btn ghost sm" data-close>إغلاق</button></div>${saResultHTML(q, key, answersOf(r.x, n), { name: r.s.name })}`, "wide"); }));
-  $("#csv").onclick = () => downloadCSV(`نتائج-${q.title}`, [["الطالب", "الصف", "الدرجة", "من", "النسبة %", "وقت التسليم"], ...rows.map((r) => [r.s.name, r.s.className, r.sc.right, r.sc.total, r.sc.pct, ts(r.x.submittedAt)?.toLocaleString("ar-AE")]), ...missing.map((s) => [s.name, s.className, "لم يسلّم", "", "", ""])]);
+  $$("[data-view]", main).forEach((b) => (b.onclick = () => { const r = rows.find((r) => r.x.id === b.dataset.view);
+    const drawV = (n) => { const it = r.all.find((s) => s.a.n === n) || r.best;
+      openModal(`<div class="row"><h2 style="margin:0">${esc(r.s.name)}</h2><span class="spacer"></span>${r.all.length > 1 ? `<select id="attSel">${r.all.map((s) => `<option value="${s.a.n}" ${s === it ? "selected" : ""}>المحاولة ${s.a.n} — ${s.sc.pct}%${s === r.best ? " ⭐" : ""}</option>`).join("")}</select>` : ""}<button class="btn ghost sm" data-close>إغلاق</button></div>${saResultHTML(q, key, answersOf(it.a, n), { name: r.s.name, attempt: r.all.length > 1 ? it.a.n : 0 })}`, "wide");
+      if ($("#attSel")) $("#attSel").onchange = (e) => drawV(+e.target.value); };
+    drawV(r.best.a.n); }));
+  const table = () => [["الطالب", "الصف", "أفضل درجة", "من", "النسبة %", "النتيجة", "عدد المحاولات", "نسبة أول محاولة %", "آخر تسليم"], ...rows.map((r) => [r.s.name, r.s.className || "", r.sc.right, r.sc.total, r.sc.pct, r.sc.right >= passOf(q, r.sc.total) ? "ناجح" : "راسب", r.tries, r.first.sc.pct, ts(r.last.a.submittedAt)?.toLocaleString("ar-AE") || ""]), ...missing.map((s) => [s.name, s.className, "لم يسلّم", "", "", "", 0, "", ""])];
+  $("#xl").onclick = () => downloadXlsx(`نتائج - ${q.title}`, table());
+  $("#pdf").onclick = () => printTable(`نتائج: ${q.title}`, `${classLabelText(q.classes)} · المتوسط ${avg}% · ناجح ${passedN} من ${rows.length}`, table());
 }
+const classLabelText = (cl) => (!cl || !cl.length ? "كل الصفوف" : cl.join("، "));
 // ---------- الواجبات ----------
 async function tAssignments(main) {
   const as = (await all("assignments")).sort(byDate);
@@ -1020,11 +1146,35 @@ async function sLesson(main, id) {
   <div class="card">${l.videoUrl ? videoBox(l.videoUrl) : ""}<div class="content">${rich(l.body)}</div>${l.pdfUrl ? `<div style="margin-top:14px">${pdfBox(l.pdfUrl)}</div>` : ""}${attachView(l.attachments)}</div>`;
   if (!isTeacher()) { const vr = doc(db, "views", `${id}_${S.me.id}`); getDoc(vr).then((v) => { if (!v.exists()) return setDoc(vr, { lessonId: id, studentId: S.me.id, viewedAt: serverTimestamp(), counted: false }); }).catch(() => {}); }
 }
+// ---------- قائمة الاختبارات للطالب (بطاقات مثل منصة التدريب: عدد المحاولات وأفضل نتيجة) ----------
+const passOf = (q, total) => Math.ceil(total * ((q.passPct ?? 50) / 100) - 1e-9);
+// جميع محاولات الطالب على اختبار: سجلات المحاولات + التسليم الأول القديم (قبل نظام المحاولات)
+const attemptsFor = (sub, atts) => { const a = [...atts].sort((x, y) => x.n - y.n); if (sub && !a.some((x) => x.n === 1)) a.unshift({ ...sub, n: 1, id: sub.id + "_1" }); return a; };
+const bestOf = (arr, key) => arr.map((x) => ({ x, sc: scoreOf(x, key) })).reduce((b, c) => (!b || c.sc.pct > b.sc.pct ? c : b), null);
+const termsOf = (qs) => [...new Set(qs.map((q) => q.term).filter(Boolean))].sort();
+const termSel = (terms, cur) => (terms.length ? `<select id="termf" style="max-width:180px"><option value="">كل الفصول الدراسية</option>${terms.map((t) => `<option ${t === cur ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>` : "");
+async function myKeys(quizzes) {
+  const keys = {}; await Promise.all(quizzes.map(async (q) => { try { const k = await getDoc(doc(db, "quizKeys", q.id)); if (k.exists()) keys[q.id] = k.data(); } catch {} })); return keys;
+}
 async function sQuizzes(main) {
-  const [quizzes, subs] = await Promise.all([pubQ("quizzes"), myQ("submissions")]); quizzes.sort(byDate);
-  main.innerHTML = `<div class="page-head"><h1>الاختبارات</h1></div><div class="card">${quizzes.map((q) => { const done = subs.find((s) => s.quizId === q.id);
-    return `<div class="item clickable" onclick="location.hash='#/quiz/${q.id}'">${elChip("quizzes", "ic")}<div class="body"><div class="t">${esc(q.title)}</div><div class="m">${q.count} سؤال${q.timeLimit ? ` · ⏱ ${q.timeLimit} دقيقة` : ""}${q.totalPoints ? ` · ${q.totalPoints} درجة` : ""}</div></div>
-    ${done ? `<span class="pill ok">تم التسليم</span>` : q.open ? `<span class="btn sm">ابدأ</span>` : `<span class="pill gray">مغلق</span>`}</div>`; }).join("") || `<div class="empty">لا توجد اختبارات.</div>`}</div>`;
+  const [quizzes, subs, atts] = await Promise.all([pubQ("quizzes"), myQ("submissions"), myQ("attempts").catch(() => [])]); quizzes.sort(byDate);
+  const mine = (q) => attemptsFor(subs.find((s) => s.quizId === q.id), atts.filter((a) => a.quizId === q.id));
+  const keys = await myKeys(quizzes.filter((q) => q.showResults && mine(q).length));
+  let term = secGet("qterm") || ""; const terms = termsOf(quizzes); if (!terms.includes(term)) term = "";
+  const card = (q) => { const my = mine(q), k = keys[q.id], b = k && my.length ? bestOf(my, k) : null, pass = b ? b.sc.right >= passOf(q, b.sc.total) : false;
+    const canRetake = q.unlimited && q.open;
+    return `<div class="qcard"><div class="qc-h">${elChip("quizzes", "ic")}<div style="flex:1;min-width:0"><div class="t">${esc(q.title)}</div><div class="m">${q.term ? `<span class="pill gray">${esc(q.term)}</span> ` : ""}${q.unlimited ? `<span class="pill">محاولات غير محدودة</span>` : ""}</div></div></div>
+      <div class="qc-stats"><div><b>${q.count}</b><small>سؤال</small></div><div><b>${q.totalPoints || q.count}</b><small>درجة</small></div><div><b>${q.timeLimit || "∞"}</b><small>دقيقة</small></div><div><b>${q.calculator ? "✓" : "✕"}</b><small>الآلة الحاسبة</small></div></div>
+      ${my.length ? `<div class="qc-my"><span>محاولاتي: <b>${my.length}</b></span>${b ? `<span>أفضل نتيجة: <b>${b.sc.right}/${b.sc.total}</b> (${b.sc.pct}%)</span><span class="pill ${pass ? "ok" : "bad"}">${pass ? "ناجح" : "لم ينجح"}</span>` : `<span class="muted">النتيجة لم تُعلن بعد</span>`}</div>` : ""}
+      <div class="row qc-f"><span class="spacer"></span>${my.length ? `<a class="btn ghost sm" href="#/quiz/${q.id}">عرض النتيجة</a>${canRetake ? `<a class="btn sm" href="#/quiz/${q.id}" data-retake="${q.id}">محاولة جديدة</a>` : ""}` : q.open ? `<a class="btn sm" href="#/quiz/${q.id}">ابدأ الاختبار</a>` : `<span class="pill gray">مغلق</span>`}</div></div>`; };
+  const draw = () => {
+    const shown = quizzes.filter((q) => !term || q.term === term);
+    main.innerHTML = `<div class="page-head"><div><h1>الاختبارات</h1><p class="sub">${quizzes.length} اختبار · يمكنك مراجعة نتائجك في <a href="#/record">سجل التدريب</a></p></div><div class="row">${termSel(terms, term)}<a class="btn ghost" href="#/record">سجل التدريب</a></div></div>
+      ${shown.length ? `<div class="qgrid">${shown.map(card).join("")}</div>` : `<div class="card empty">لا توجد اختبارات.</div>`}`;
+    if ($("#termf")) $("#termf").onchange = (e) => { term = e.target.value; secSet("qterm", term); draw(); };
+    $$("[data-retake]", main).forEach((a) => (a.onclick = () => { try { sessionStorage.setItem("retake", a.dataset.retake); } catch {} }));
+  };
+  draw();
 }
 // ---------- واجهة الاختبار بنمط SwiftAssess (مثل منصة التدريب على الاختبارات الإلكترونية) ----------
 const SA_L = ["a", "b", "c", "d", "e", "f"];
@@ -1033,6 +1183,8 @@ const saIcon = {
   info: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-6h2zm0-8h-2V7h2z"/></svg>`,
   doc: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zm2 16H8v-2h8zm0-4H8v-2h8zm-3-5V3.5L18.5 9z"/></svg>`,
   gear: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 000-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 00-1.7-1L15 3h-4l-.3 2.9a7.6 7.6 0 00-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 000 2l-2.1 1.6 2 3.5 2.5-1a7.6 7.6 0 001.7 1L11 21h4l.3-2.9a7.6 7.6 0 001.7-1l2.5 1 2-3.5zM13 15.5A3.5 3.5 0 1113 8.5a3.5 3.5 0 010 7z"/></svg>`,
+  calc: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7 2h10a2 2 0 012 2v16a2 2 0 01-2 2H7a2 2 0 01-2-2V4a2 2 0 012-2zm0 2v4h10V4zm1 7v2h2v-2zm4 0v2h2v-2zm4 0v6h2v-6zM8 15v2h2v-2zm4 0v2h2v-2z"/></svg>`,
+  lang: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12.9 15.1l-2.5-2.5h.1A17 17 0 0014 6h3V4h-7V2H8v2H1v2h11.2A15.7 15.7 0 019 11.4 15.6 15.6 0 016.7 8H4.7a17.5 17.5 0 003 4.6l-5.1 5L4 19l5-5 3.1 3.1zM18.5 10h-2L12 22h2l1.1-3h4.8l1.1 3h2zm-2.6 7l1.6-4.3 1.6 4.3z"/></svg>`,
   prev: `<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 11h12.2l-5.6-5.6L12 4l8 8-8 8-1.4-1.4 5.6-5.6H4z"/></svg>`,
   next: `<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></svg>`,
   flag: `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M17 3H7a2 2 0 00-2 2v16l7-3 7 3V5a2 2 0 00-2-2zm0 15l-5-2.2L7 18V5h10z"/></svg>`,
@@ -1050,25 +1202,45 @@ function saDialog(html) {
   const d = document.createElement("div"); d.className = "sa-dim"; d.innerHTML = `<div class="sa-dlg">${html}</div>`;
   document.body.appendChild(d); d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-x]")) d.remove(); }); return d;
 }
+// آلة حاسبة علمية بسيطة داخل الاختبار (عند السماح بها)
+function calcEval(src) {
+  let e = String(src).replace(/×/g, "*").replace(/÷/g, "/").replace(/[−–]/g, "-").replace(/√/g, "sqrt").replace(/π/g, "pi").replace(/(\d)\s*EXP\s*/gi, "$1e").replace(/\^/g, "**");
+  if (/[^0-9+\-*/().\s,a-z]/i.test(e)) throw new Error("x");
+  e = e.replace(/(\d)e([+\-]?\d)/gi, "$1E$2").replace(/[a-z]+/gi, (w) => { if (w === "E") return w; const m = { sqrt: "Math.sqrt", log: "Math.log10", ln: "Math.log", sin: "Math.sin", cos: "Math.cos", tan: "Math.tan", pi: "Math.PI" }[w.toLowerCase()]; if (!m) throw new Error("x"); return m; });
+  const v = Function(`"use strict";return (${e})`)(); if (typeof v !== "number" || !isFinite(v)) throw new Error("x"); return +v.toPrecision(10);
+}
+function calcDialog() {
+  const keys = ["7", "8", "9", "÷", "(", ")", "4", "5", "6", "×", "√", "^", "1", "2", "3", "−", "log", "ln", "0", ".", "EXP", "+", "π", "C"];
+  const d = saDialog(`<div class="sa-dh"><h2>الآلة الحاسبة</h2><button class="sa-x" data-x>×</button></div>
+    <div class="sa-db" dir="ltr"><input type="text" id="cx" placeholder="6.02 EXP 23 × 0.5" autocomplete="off" style="font-size:18px"><div class="calc-out" id="cy">0</div>
+    <div class="calc-keys">${keys.map((k) => `<button type="button" data-k="${k}">${k}</button>`).join("")}<button type="button" class="eq" data-k="=">=</button></div></div>`);
+  const x = $("#cx", d), y = $("#cy", d);
+  const run = () => { try { y.textContent = x.value.trim() ? calcEval(x.value) : 0; y.classList.remove("bad"); } catch { y.textContent = "خطأ في الصيغة"; y.classList.add("bad"); } };
+  $$("[data-k]", d).forEach((b) => (b.onclick = () => { const k = b.dataset.k; if (k === "C") x.value = ""; else if (k === "=") { run(); return; } else x.value += ["√", "log", "ln"].includes(k) ? k + "(" : k === "EXP" ? " EXP " : k; x.focus(); }));
+  x.onkeydown = (e) => { if (e.key === "Enter") run(); }; x.focus();
+}
 const saPlain = (t) => String(t || "").split("\n").find((l) => l.trim() && !/^\s*\|/.test(l)) || "";
-const saShort = (t) => { const p = saPlain(t).replace(/\*\*/g, ""); return p.length > 70 ? p.slice(0, 70).replace(/\S*$/, "") + "…" : p; };
+const saShort = (t) => { const p = saPlain(t).replace(/\*\*/g, "").replace(/\$[^$]*\$/g, (m) => m.replace(/[\\{}]/g, "")); return p.length > 70 ? p.slice(0, 70).replace(/\S*$/, "") + "…" : p; };
 const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const getQlang = () => { try { return localStorage.getItem("qlang") || "both"; } catch { return "both"; } };
+const setQlang = (v) => { try { localStorage.setItem("qlang", v); } catch {} };
+const QL_LABEL = { both: "English | عربي", en: "English", ar: "عربي" };
 
 // شاشة النتيجة والمراجعة (للطالب بعد التسليم، وللمعلم عند عرض إجابات طالب)
-function saResultHTML(q, key, answers, { taken = null, name = "" } = {}) {
+function saResultHTML(q, key, answers, { taken = null, name = "", attempt = 0 } = {}) {
   const qs = q.questions || [], pts = qs.map((x, i) => +(key.points || [])[i] || +x.points || 1);
   const got = qs.map((x, i) => (answers[i] === key.answers[i] ? pts[i] : 0));
   const total = pts.reduce((a, b) => a + b, 0), right = got.reduce((a, b) => a + b, 0), pct = total ? Math.round((right / total) * 100) : 0;
-  const pass = Math.ceil(total * 0.5), passed = right >= pass;
+  const pass = passOf(q, total), passed = right >= pass;
   const deg = Math.round(pct * 3.6);
   const groups = {}; qs.forEach((x, i) => { const k = x.ocode || x.outcome || "—"; (groups[k] ||= { label: x.outcome || "", code: x.ocode || "", got: 0, tot: 0 }); groups[k].got += got[i]; groups[k].tot += pts[i]; });
   const fmtN = (n) => (Math.round(n * 10) / 10).toString();
-  return `<div class="sa-res">
+  return `<div class="sa-res qlang-${getQlang()}">
     <div class="sa-res-cards">
       <div class="sa-card"><div><div class="v">${taken != null ? mmss(taken) : "—"}</div><div class="l">الوقت المستغرق</div></div><span class="ic">${saIcon.clock}</span></div>
       <div class="sa-card"><div><div class="v">${fmtN(right)} / ${fmtN(total)}</div><div class="l">الدرجة</div></div><span class="ic">${passed ? "✓" : "✕"}</span></div>
-      <div class="sa-card"><div><div class="v">${pass}</div><div class="l">درجة النجاح</div></div></div>
-      <div class="sa-card ${passed ? "ok" : "bad"}"><div><div class="v">${passed ? "ناجح" : "راسب"}</div><div class="l">النتيجة</div></div><span class="ic">${passed ? "✓" : "✕"}</span></div>
+      <div class="sa-card"><div><div class="v">${pass}</div><div class="l">درجة النجاح (${q.passPct ?? 50}%)</div></div></div>
+      <div class="sa-card ${passed ? "ok" : "bad"}"><div><div class="v">${passed ? "ناجح" : "راسب"}</div><div class="l">النتيجة${attempt ? ` · المحاولة ${attempt}` : ""}</div></div><span class="ic">${passed ? "✓" : "✕"}</span></div>
     </div>
     <div class="sa-panel sa-sum"><div class="donut" style="--deg:${deg}deg;--c:${passed ? "#8acc36" : "#f95484"}"><span>${pct}%</span></div>
       <div><div><i class="dot g"></i>النقاط المكتسبة: ${fmtN(right)}</div><div><i class="dot p"></i>النقاط الفائتة: ${fmtN(total - right)}</div>
@@ -1081,9 +1253,9 @@ function saResultHTML(q, key, answers, { taken = null, name = "" } = {}) {
 }
 function saReview(q, key, answers) {
   return (q.questions || []).map((x, i) => { const ok = answers[i] === key.answers[i], pts = +(key.points || [])[i] || +x.points || 1;
-    return `<div class="sa-rq"><div class="h"><b>Q.${i + 1}</b> <span class="${ok ? "y" : "n"}">${ok ? "✓" : "✗"}</span> <span class="muted">(${ok ? pts : 0}/${pts})</span></div>
-    <div class="sa-stem">${qText(x)}</div>
-    ${x.options.map((o, j) => `<div class="sa-ro ${j === key.answers[i] ? "right" : answers[i] === j ? "wrong" : ""}"><span class="l">.${SA_L[j]}</span><span>${inline(o)}</span>${answers[i] === j ? `<span class="you">إجابتك</span>` : ""}</div>`).join("")}
+    return `<div class="sa-rq"><div class="h"><b>Q.${i + 1}</b> <span class="${ok ? "y" : "n"}">${ok ? "✓" : "✗"}</span> <span class="muted">(${ok ? pts : 0}/${pts})</span>${x.ocode ? ` <span class="muted" dir="ltr">${esc(x.ocode)}</span>` : ""}</div>
+    <div class="sa-stem">${qText(x, q)}</div>
+    ${x.options.map((o, j) => `<div class="sa-ro ${j === key.answers[i] ? "right" : answers[i] === j ? "wrong" : ""}"><span class="l">.${SA_L[j]}</span><span class="ot">${optHTML(x, j)}</span>${answers[i] === j ? `<span class="you">إجابتك</span>` : ""}</div>`).join("")}
     ${answers[i] == null || answers[i] < 0 ? `<p class="muted">لم تتم الإجابة على هذا السؤال</p>` : ""}
     ${key.explanations?.[i] ? `<div class="expl">💡 ${inline(key.explanations[i])}</div>` : ""}</div>`; }).join("");
 }
@@ -1091,57 +1263,82 @@ const reviewHTML = (q, key, answers) => `<div class="sa-res">${saReview(q, key, 
 
 async function sQuiz(main, id) {
   const qs = await getDoc(doc(db, "quizzes", id)); if (!qs.exists()) return go("quizzes"); const q = qs.data();
-  const sub = (await myQ("submissions")).find((s) => s.quizId === id);
-  const startRef = doc(db, "starts", `${id}_${S.me.id}`);
+  const uid = S.me.id;
+  const [subs, attsAll] = await Promise.all([myQ("submissions"), myQ("attempts").catch(() => [])]);
+  const sub = subs.find((s) => s.quizId === id);
+  const atts = attemptsFor(sub, attsAll.filter((a) => a.quizId === id));
+  const nextN = (atts.length ? Math.max(...atts.map((a) => a.n)) : 0) + 1;
+  const startId = (n) => (n === 1 ? `${id}_${uid}` : `${id}_${uid}_${n}`);
+  const startRef = doc(db, "starts", startId(nextN));
   let started = null; try { const st = await getDoc(startRef); if (st.exists()) started = ts(st.data().startedAt); } catch {}
+  const sk = `exam-${id}-${uid}` + (nextN > 1 ? `-${nextN}` : "");
+  const canRetake = !!(q.unlimited && q.open && sub);
+  let wantRetake = false; try { wantRetake = sessionStorage.getItem("retake") === id; sessionStorage.removeItem("retake"); } catch {}
   const head = `<div class="page-head"><div><h1>${esc(q.title)}</h1><p class="sub">${q.count} سؤال${q.totalPoints ? ` · ${q.totalPoints} درجة` : ""}${q.timeLimit ? ` · ${q.timeLimit} دقيقة` : ""}</p></div><a class="btn ghost" href="#/quizzes">رجوع</a></div>`;
-  if (sub) {
-    if (!q.showResults) { main.innerHTML = head + `<div class="card empty">✅ تم تسليم إجاباتك بتاريخ ${fmt(sub.submittedAt)}.<br>سيعلن المعلم النتائج لاحقاً.</div>`; return; }
-    const ks = await getDoc(doc(db, "quizKeys", id)); const key = ks.data();
-    const sAt = ts(sub.submittedAt), taken = started && sAt ? sAt - started : null;
-    main.innerHTML = `<div class="sa-res-top"><span class="spacer"></span><button class="sa-tb" id="pr">طباعة</button><a class="sa-tb" href="#/quizzes">العودة إلى الاختبارات</a></div>` + saResultHTML(q, key, answersOf(sub, key.answers.length), { taken, name: S.me.name });
-    $("#pr").onclick = () => window.print();
-    return;
-  }
-  if (!q.open) { main.innerHTML = head + `<div class="card empty">هذا الاختبار مغلق حالياً.</div>`; return; }
   const N = q.questions.length, total = q.totalPoints || N;
+  const bilingual = q.questions.some((x) => x.text_en || x.options_en?.some(Boolean));
+
+  const resultView = async (showN) => {
+    if (!q.showResults) { main.innerHTML = head + `<div class="card empty">✅ تم تسليم إجاباتك (${atts.length} ${atts.length === 1 ? "محاولة" : "محاولات"}).<br>سيعلن المعلم النتائج لاحقاً.${canRetake ? `<br><br><button class="btn" id="again">محاولة جديدة</button>` : ""}</div>`; if ($("#again")) $("#again").onclick = intro; return; }
+    const ks = await getDoc(doc(db, "quizKeys", id)); const key = ks.data();
+    const scored = atts.map((a) => ({ a, sc: scoreOf(a, key) })); const best = scored.reduce((b, c) => (!b || c.sc.pct > b.sc.pct ? c : b), null);
+    const cur = scored.find((s) => s.a.n === showN) || scored[scored.length - 1];
+    let taken = null; try { const st = await getDoc(doc(db, "starts", startId(cur.a.n))); const s0 = st.exists() ? ts(st.data().startedAt) : null, s1 = ts(cur.a.submittedAt); if (s0 && s1) taken = s1 - s0; } catch {}
+    main.innerHTML = `<div class="sa-res-top">${bilingual ? `<button class="sa-tb" id="ql">${saIcon.lang} ${QL_LABEL[getQlang()]}</button>` : ""}<span class="spacer"></span>${canRetake ? `<button class="sa-go" id="again">محاولة جديدة</button>` : ""}<button class="sa-tb" id="pr">طباعة</button><a class="sa-tb" href="#/record">سجل التدريب</a><a class="sa-tb" href="#/quizzes">العودة إلى الاختبارات</a></div>
+      ${scored.length > 1 ? `<div class="sa-panel att-panel"><h3>محاولاتك (${scored.length}) — تُحتسب أفضل نتيجة</h3><div class="tbl-wrap"><table><thead><tr><th>المحاولة</th><th>التاريخ</th><th>الدرجة</th><th>النسبة</th><th>النتيجة</th><th></th></tr></thead><tbody>
+        ${scored.map((s) => { const ps = s.sc.right >= passOf(q, s.sc.total); return `<tr class="${s === cur ? "cur" : ""}"><td>${s.a.n}${s === best ? " ⭐" : ""}</td><td>${fmt(s.a.submittedAt)}</td><td>${s.sc.right} / ${s.sc.total}</td><td>${pctPill(s.sc.pct)}</td><td><span class="pill ${ps ? "ok" : "bad"}">${ps ? "ناجح" : "راسب"}</span></td><td>${s === cur ? `<span class="muted">معروضة</span>` : `<button class="btn link sm" data-att="${s.a.n}">عرض</button>`}</td></tr>`; }).join("")}</tbody></table></div></div>` : ""}
+      ${saResultHTML(q, key, answersOf(cur.a, key.answers.length), { taken, name: S.me.name, attempt: scored.length > 1 ? cur.a.n : 0 })}`;
+    $("#pr").onclick = () => window.print();
+    if ($("#ql")) $("#ql").onclick = () => { const o = ["both", "en", "ar"]; setQlang(o[(o.indexOf(getQlang()) + 1) % 3]); resultView(cur.a.n); };
+    if ($("#again")) $("#again").onclick = intro;
+    $$("[data-att]", main).forEach((b) => (b.onclick = () => resultView(+b.dataset.att)));
+  };
   const intro = () => {
-    main.innerHTML = `<div class="sa-intro"><div class="sa-intro-h"><div class="muted">${esc(SITE.title)} · ${esc(S.me.className || "")}</div><h1>${esc(q.title)}</h1></div>
+    if (!q.open) { main.innerHTML = head + `<div class="card empty">هذا الاختبار مغلق حالياً.</div>`; return; }
+    main.innerHTML = `<div class="sa-intro"><div class="sa-intro-h"><div class="muted">${esc(SITE.title)} · ${esc(S.me.className || "")}${q.term ? " · " + esc(q.term) : ""}</div><h1>${esc(q.title)}</h1>${nextN > 1 ? `<div class="pill" style="margin-top:6px">المحاولة رقم ${nextN}</div>` : ""}</div>
       <div class="sa-intro-b"><div class="sa-res-cards">
         <div class="sa-card"><div><div class="v">${N}</div><div class="l">عدد الأسئلة</div></div></div>
         <div class="sa-card"><div><div class="v">${total}</div><div class="l">الدرجة الكلية</div></div></div>
         <div class="sa-card"><div><div class="v">${q.timeLimit ? q.timeLimit + " دقيقة" : "مفتوح"}</div><div class="l">زمن الاختبار</div></div></div>
-        <div class="sa-card"><div><div class="v">${Math.ceil(total * 0.5)}</div><div class="l">درجة النجاح</div></div></div></div>
+        <div class="sa-card"><div><div class="v">${passOf(q, total)}</div><div class="l">درجة النجاح (${q.passPct ?? 50}%)</div></div></div></div>
       ${q.description ? `<p class="sa-desc">${esc(q.description)}</p>` : ""}${attachView(q.attachments, "ملفات مساعدة للاختبار")}
       <ul class="rules"><li>يظهر سؤال واحد في كل شاشة؛ تنقّل بالأسهم أو من قائمة الأسئلة ☰.</li>
         <li>استخدم 🔖 لوضع علامة مراجعة على أي سؤال، والأداة <u><b>S</b></u> لشطب الخيارات التي تستبعدها.</li>
-        <li>لا يمكنك التسليم قبل الاطلاع على جميع الأسئلة.</li>
+        ${q.seenAll !== false ? `<li>لا يمكنك التسليم قبل الاطلاع على جميع الأسئلة.</li>` : ""}
+        ${q.backtrack === false ? `<li><b>لا يمكن الرجوع إلى سؤال سابق</b> بعد الانتقال إلى السؤال التالي.</li>` : ""}
+        <li>الآلة الحاسبة: ${q.calculator ? "مسموحة ✓ (زر الآلة الحاسبة أعلى الشاشة)" : "غير مسموحة ✕"}</li>
+        ${bilingual ? `<li>الأسئلة باللغتين: الإنجليزية يساراً والعربية يميناً — يمكنك إظهار لغة واحدة من زر اللغة.</li>` : ""}
+        ${q.unlimited ? `<li>محاولات غير محدودة — تُحتسب <b>أفضل نتيجة</b> لك، وتُحفظ كل المحاولات في سجل التدريب.</li>` : ""}
         ${q.timeLimit ? `<li>يبدأ العدّ التنازلي عند الضغط على «ابدأ»، ولا يتوقف إذا أغلقت الصفحة، وتُسلَّم الإجابات تلقائياً عند انتهاء الوقت.</li>` : ""}</ul>
       <div class="row"><a class="sa-tb ghost" href="#/quizzes">رجوع</a><span class="spacer"></span><button class="sa-go" id="go">${started ? "متابعة الاختبار" : "ابدأ الاختبار"}</button></div></div></div>`;
     $("#go").onclick = async (e) => {
       busy(e.target, true);
-      if (!started) { try { await setDoc(startRef, { quizId: id, studentId: S.me.id, startedAt: serverTimestamp() }); const st = await getDoc(startRef); started = ts(st.data().startedAt) || new Date(); } catch (err) { busy(e.target, false); return toast(errMsg(err)); } }
+      if (!started) { try { await setDoc(startRef, { quizId: id, studentId: uid, startedAt: serverTimestamp(), ...(nextN > 1 ? { n: nextN } : {}) }); const st = await getDoc(startRef); started = ts(st.data().startedAt) || new Date(); } catch (err) { busy(e.target, false); return toast(errMsg(err)); } }
       exam(true);
     };
   };
   const exam = (fresh) => {
-    const sk = `exam-${id}-${S.me.id}`; let st = {}; try { st = JSON.parse(localStorage.getItem(sk) || "{}"); } catch {}
-    const ans = st.ans || {}, flags = st.flags || {}, seen = st.seen || {}, strikes = st.strikes || {};
+    let st = {}; try { st = JSON.parse(localStorage.getItem(sk) || "{}"); } catch {}
+    const ans = st.ans || {}, flags = st.flags || {}, seen = st.seen || {}, strikes = st.strikes || {}, oord = st.oord || {};
     let order = st.order; if (!order || order.length !== N) { order = [...Array(N).keys()]; if (q.shuffle) order = shuffle(order); }
-    let cur = Math.min(st.cur || 0, N - 1), submitting = false, timer = null, strike = false, drawer = false, side = true;
+    if (q.shuffleOpts) q.questions.forEach((x, i) => { if (!oord[i] || oord[i].length !== x.options.length) oord[i] = shuffle([...x.options.keys()]); });
+    let cur = Math.min(st.cur || 0, N - 1), maxSeen = st.maxSeen || cur, submitting = false, timer = null, strike = false, drawer = false, side = true, hintOn = false;
     let fs = +(localStorage.getItem("sa-fs") || 0), dark = localStorage.getItem("sa-dark") === "1";
-    const save = () => { try { localStorage.setItem(sk, JSON.stringify({ ans, flags, order, cur, seen, strikes })); } catch {} };
+    const noBack = q.backtrack === false;
+    const save = () => { try { localStorage.setItem(sk, JSON.stringify({ ans, flags, order, cur, seen, strikes, oord, maxSeen })); } catch {} };
     const deadline = q.timeLimit && started ? started.getTime() + q.timeLimit * 60000 : 0;
     const answered = () => order.filter((qi) => ans[qi] >= 0).length;
-    main.innerHTML = `<div class="sa ${dark ? "dark" : ""}" id="sa" style="--fs:${fs}px">
+    main.innerHTML = `<div class="sa ${dark ? "dark" : ""} qlang-${getQlang()}" id="sa" style="--fs:${fs}px">
       <header class="sa-top">
         <button class="sa-ib" id="saMenu" title="قائمة الأسئلة">${saIcon.menu}</button>
-        <div class="sa-title"><small>${esc(SITE.title)} · ${esc(S.me.className || "")}</small><b>${esc(q.title)} <span>(${N} أسئلة)</span></b></div>
+        <div class="sa-title"><small>${esc(SITE.title)} · ${esc(S.me.className || "")}${nextN > 1 ? ` · المحاولة ${nextN}` : ""}</small><b>${esc(q.title)} <span>(${N} أسئلة)</span></b></div>
         <span class="spacer"></span>
+        ${bilingual ? `<button class="sa-ib sa-lang" id="saLang" title="لغة الأسئلة">${saIcon.lang}<span>${QL_LABEL[getQlang()]}</span></button>` : ""}
+        ${q.calculator ? `<button class="sa-ib" id="saCalc" title="الآلة الحاسبة">${saIcon.calc}</button>` : ""}
         <button class="sa-ib" id="saTInfo" title="معلومات السؤال">${saIcon.info}</button>
         <button class="sa-ib" id="saTDoc" title="التعليمات">${saIcon.doc}</button>
         <button class="sa-ib" id="saTSet" title="إعدادات سهولة الوصول">${saIcon.gear}</button>
-        <div class="sa-nav"><button class="sa-arrow" id="saPrev" title="السابق">${saIcon.prev}</button><span id="saPos" dir="ltr">1 - ${N}</span><button class="sa-arrow" id="saNext" title="التالي">${saIcon.next}</button></div>
+        <div class="sa-nav"><button class="sa-arrow" id="saPrev" title="السابق" ${noBack ? 'style="visibility:hidden"' : ""}>${saIcon.prev}</button><span id="saPos" dir="ltr">1 - ${N}</span><button class="sa-arrow" id="saNext" title="التالي">${saIcon.next}</button></div>
         <button class="sa-submit" id="saSub2">تسليم</button>
         <button class="sa-ib sa-flag" id="saFlag" title="علامة للمراجعة">${saIcon.flag}</button>
         <div class="sa-timer" id="saTimer">${deadline ? "--:--" : "∞"}</div>
@@ -1154,21 +1351,23 @@ async function sQuiz(main, id) {
       <div class="sa-prog"><i id="saPbar"></i><span id="saPtxt">0%</span></div></div>`;
     const box = $("#sa");
     const list = () => {
-      $("#saList").innerHTML = order.map((qi, p) => `<button class="sa-li ${p === cur ? "cur" : ""} ${ans[qi] >= 0 ? "done" : ""} ${flags[qi] ? "fl" : ""}" data-p="${p}">${p + 1} - ${inline(saShort(q.questions[qi].text))}${flags[qi] ? `<span class="bm">${saIcon.flagOn}</span>` : ""}</button>`).join("");
-      $$("#saList .sa-li").forEach((b) => (b.onclick = () => { cur = +b.dataset.p; drawer = false; show(); }));
+      $("#saList").innerHTML = order.map((qi, p) => `<button class="sa-li ${p === cur ? "cur" : ""} ${ans[qi] >= 0 ? "done" : ""} ${flags[qi] ? "fl" : ""}" data-p="${p}" ${noBack && p < cur ? "disabled" : ""}>${p + 1} - ${inline(saShort(q.questions[qi].text))}${flags[qi] ? `<span class="bm">${saIcon.flagOn}</span>` : ""}</button>`).join("");
+      $$("#saList .sa-li").forEach((b) => (b.onclick = () => { const p = +b.dataset.p; if (noBack && p < cur) return; cur = p; drawer = false; show(); }));
     };
     const prog = () => { const p = Math.round((answered() / N) * 100); $("#saPbar").style.width = p + "%"; $("#saPtxt").textContent = p + "%"; };
     const show = () => {
-      const qi = order[cur], qq = q.questions[qi]; seen[qi] = 1; save();
+      const qi = order[cur], qq = q.questions[qi]; seen[qi] = 1; maxSeen = Math.max(maxSeen, cur); save();
       box.classList.toggle("open", drawer); box.classList.toggle("noside", !side); box.classList.toggle("striking", strike);
-      $("#saPos").textContent = `${cur + 1} - ${N}`; $("#saPrev").disabled = cur === 0; $("#saNext").disabled = cur === N - 1;
+      $("#saPos").textContent = `${cur + 1} - ${N}`; $("#saPrev").disabled = cur === 0 || noBack; $("#saNext").disabled = cur === N - 1;
       $("#saSub2").style.display = cur === N - 1 ? "" : "none";
       $("#saFlag").innerHTML = flags[qi] ? saIcon.flagOn : saIcon.flag; $("#saFlag").classList.toggle("on", !!flags[qi]);
-      $("#saSide").innerHTML = `<div class="sa-marks">${qq.points || 1} درجات</div>${qq.outcome || qq.ocode ? `<div class="sa-oc">${inline(qq.outcome || "")}${qq.ocode ? `<div dir="ltr">${esc(qq.ocode)}</div>` : ""}</div>` : ""}`;
-      const sk2 = strikes[qi] || {};
-      $("#saQbox").innerHTML = `<div class="sa-q"><div class="sa-stem">${qText(qq)}</div>
+      $("#saSide").innerHTML = `<div class="sa-marks">${qq.points || 1} ${(qq.points || 1) === 1 ? "درجة" : "درجات"}</div>${qq.section || qq.topic ? `<div class="sa-oc"><small class="muted">${inline([qq.section, qq.topic].filter(Boolean).join(" · "))}</small></div>` : ""}${qq.outcome || qq.ocode ? `<div class="sa-oc">${inline(qq.outcome || "")}${qq.ocode ? `<div dir="ltr">${esc(qq.ocode)}</div>` : ""}</div>` : ""}
+        ${qq.hint ? `<button class="sa-tb" id="saHint" style="margin-top:10px">💡 ${hintOn ? "إخفاء التلميح" : "تلميح"}</button>${hintOn ? `<div class="sa-hint">${inline(qq.hint)}</div>` : ""}` : ""}`;
+      if ($("#saHint")) $("#saHint").onclick = () => { hintOn = !hintOn; show(); };
+      const sk2 = strikes[qi] || {}, ord = q.shuffleOpts && oord[qi] ? oord[qi] : [...qq.options.keys()];
+      $("#saQbox").innerHTML = `<div class="sa-q"><div class="sa-stem">${qText(qq, q)}</div>
         <button class="sa-s ${strike ? "on" : ""}" id="saStrike" title="شطب الخيارات"><u>S</u></button>
-        <div class="sa-opts">${qq.options.map((o, j) => `<button class="sa-opt ${ans[qi] === j ? "sel" : ""} ${sk2[j] ? "struck" : ""}" data-j="${j}"><span class="sa-c">${SA_L[j]}</span><span class="sa-t">${inline(o)}</span></button>`).join("")}</div></div>`;
+        <div class="sa-opts">${ord.map((j, p) => `<button class="sa-opt ${ans[qi] === j ? "sel" : ""} ${sk2[j] ? "struck" : ""}" data-j="${j}"><span class="sa-c">${SA_L[p]}</span><span class="sa-t">${optHTML(qq, j)}</span></button>`).join("")}</div></div>`;
       $$(".sa-opt", box).forEach((b) => (b.onclick = () => { const j = +b.dataset.j;
         if (strike) { strikes[qi] = { ...(strikes[qi] || {}), [j]: !(strikes[qi] || {})[j] }; if (strikes[qi][j] && ans[qi] === j) delete ans[qi]; }
         else { if (sk2[j]) { strikes[qi][j] = false; } ans[qi] = ans[qi] === j ? -1 : j; if (ans[qi] < 0) delete ans[qi]; }
@@ -1178,7 +1377,8 @@ async function sQuiz(main, id) {
     };
     const instructions = () => saDialog(`<div class="sa-dh"><h2>تعليمات القسم</h2><button class="sa-x" data-x>×</button></div>
       <div class="sa-db"><p>فيما يلي تعليمات هذا القسم.</p>${q.timeLimit ? `<p>لديك ${q.timeLimit} دقيقة لإكمال هذا القسم.</p>` : ""}${q.description ? `<p><b>${esc(q.description)}</b></p>` : ""}
-      <p class="muted">الأدوات المتاحة: قائمة الأسئلة، معلومات السؤال، الشطب، وضع علامة للمراجعة، وإعدادات سهولة الوصول.</p>${attachView(q.attachments, "ملفات مساعدة")}</div>
+      ${q.backtrack === false ? `<p>⚠ لا يمكن الرجوع إلى الأسئلة السابقة.</p>` : ""}
+      <p class="muted">الأدوات المتاحة: قائمة الأسئلة، معلومات السؤال، الشطب، وضع علامة للمراجعة${q.calculator ? "، الآلة الحاسبة" : ""}${bilingual ? "، تبديل لغة الأسئلة" : ""}، وإعدادات سهولة الوصول.</p>${attachView(q.attachments, "ملفات مساعدة")}</div>
       <div class="sa-df"><button class="sa-ok" data-x>إغلاق</button></div>`);
     const settings = () => {
       const d = saDialog(`<div class="sa-dh"><h2>إعدادات سهولة الوصول</h2><button class="sa-x" data-x>×</button></div>
@@ -1190,10 +1390,10 @@ async function sQuiz(main, id) {
       $("#dk", d).onchange = (e) => { dark = e.target.checked; apply(); }; $("#rs", d).onclick = () => { fs = 0; dark = false; $("#dk", d).checked = false; apply(); };
     };
     const trySubmit = () => {
-      if (order.some((qi) => !seen[qi])) return saToast("لا يمكنك التسليم قبل الاطلاع على جميع الأسئلة");
+      if (q.seenAll !== false && order.some((qi) => !seen[qi])) return saToast("لا يمكنك التسليم قبل الاطلاع على جميع الأسئلة");
       const un = N - answered(), fl = order.filter((qi) => flags[qi]).length;
       const d = saDialog(`<div class="sa-dh"><h2 style="font-weight:400">تأكيد</h2></div>
-        <div class="sa-db"><p>أنت على وشك تسليم التقييم. إذا تابعت فلن تتمكن من تغيير أي إجابة وسيتم حفظ درجاتك نهائياً. هل تريد المتابعة؟</p>
+        <div class="sa-db"><p>أنت على وشك تسليم التقييم. إذا تابعت فلن تتمكن من تغيير أي إجابة في هذه المحاولة. هل تريد المتابعة؟</p>
         ${un ? `<p class="sa-warn">⚠ يوجد ${un} ${un === 1 ? "سؤال" : "أسئلة"} بدون إجابة.</p>` : ""}${fl ? `<p class="sa-warn">🔖 يوجد ${fl} ${fl === 1 ? "سؤال مُعلَّم" : "أسئلة مُعلَّمة"} للمراجعة.</p>` : ""}</div>
         <div class="sa-df"><button class="sa-ok" id="saYes">تأكيد</button><button class="sa-tb" data-x>إلغاء</button></div>`);
       $("#saYes", d).onclick = () => { d.remove(); submit(false); };
@@ -1202,8 +1402,10 @@ async function sQuiz(main, id) {
       if (submitting) return; submitting = true; clearInterval(timer);
       const picks = Object.fromEntries(Object.entries(ans).filter(([, v]) => v >= 0).map(([k, v]) => [String(k), v]));
       $("#saQbox").innerHTML = `<div class="sa-q" style="text-align:center;padding-top:60px"><div class="spinner" style="margin:0 auto 12px"></div>${auto ? "انتهى الوقت — جارٍ تسليم إجاباتك..." : "جارٍ التسليم..."}</div>`;
+      const data = { quizId: id, studentId: uid, className: S.me.className || "", picks, submittedAt: serverTimestamp() };
       try {
-        await setDoc(doc(db, "submissions", `${id}_${S.me.id}`), { quizId: id, studentId: S.me.id, className: S.me.className || "", picks, scored: false, submittedAt: serverTimestamp() });
+        if (nextN === 1) { const b = writeBatch(db); b.set(doc(db, "submissions", `${id}_${uid}`), { ...data, scored: false }); b.set(doc(db, "attempts", `${id}_${uid}_1`), { ...data, n: 1 }); await b.commit(); }
+        else await setDoc(doc(db, "attempts", `${id}_${uid}_${nextN}`), { ...data, n: nextN });
         try { localStorage.removeItem(sk); } catch {} toast(auto ? "انتهى الوقت وتم تسليم إجاباتك ✓" : "تم التسليم ✓"); route();
       } catch (err) {
         if (deadline && Date.now() > deadline + 90000) { try { localStorage.removeItem(sk); } catch {} $("#saQbox").innerHTML = `<div class="sa-q" style="text-align:center">⏰ انتهى وقت الاختبار قبل التسليم، فلم تُقبل الإجابات.<br>تواصل مع المعلم إذا كان هناك عذر.<br><br><a class="sa-tb" href="#/quizzes">رجوع</a></div>`; return; }
@@ -1213,7 +1415,9 @@ async function sQuiz(main, id) {
     $("#saMenu").onclick = () => { drawer = !drawer; show(); };
     $("#saTInfo").onclick = () => { side = !side; show(); };
     $("#saTDoc").onclick = instructions; $("#saTSet").onclick = settings;
-    $("#saPrev").onclick = () => { if (cur > 0) { cur--; show(); } };
+    if ($("#saCalc")) $("#saCalc").onclick = calcDialog;
+    if ($("#saLang")) $("#saLang").onclick = () => { const o = ["both", "en", "ar"], v = o[(o.indexOf(getQlang()) + 1) % 3]; setQlang(v); box.classList.remove("qlang-both", "qlang-en", "qlang-ar"); box.classList.add("qlang-" + v); $("#saLang span").textContent = QL_LABEL[v]; };
+    $("#saPrev").onclick = () => { if (cur > 0 && !noBack) { cur--; show(); } };
     $("#saNext").onclick = () => { if (cur < N - 1) { cur++; show(); } };
     $("#saFlag").onclick = () => { const qi = order[cur]; flags[qi] = !flags[qi]; save(); show(); };
     $("#saSub1").onclick = trySubmit; $("#saSub2").onclick = trySubmit;
@@ -1228,7 +1432,43 @@ async function sQuiz(main, id) {
     }
     show(); if (fresh) instructions();
   };
-  if (started && q.timeLimit) exam(false); else intro();
+  if (started && q.timeLimit) exam(false);
+  else if (started || !sub) intro();
+  else if (wantRetake && canRetake) intro();
+  else resultView();
+}
+
+// ---------- سجل التدريب: جميع محاولات الطالب مع فلتر الفصل الدراسي والتصدير ----------
+async function sRecord(main) {
+  const [quizzes, subs, atts] = await Promise.all([pubQ("quizzes"), myQ("submissions"), myQ("attempts").catch(() => [])]);
+  const qMap = Object.fromEntries(quizzes.map((q) => [q.id, q]));
+  const done = quizzes.filter((q) => subs.some((s) => s.quizId === q.id));
+  const keys = await myKeys(done.filter((q) => q.showResults));
+  const rows = [];
+  done.forEach((q) => { const my = attemptsFor(subs.find((s) => s.quizId === q.id), atts.filter((a) => a.quizId === q.id)); const k = keys[q.id];
+    const sc = k ? my.map((a) => scoreOf(a, k)) : []; const bestPct = sc.length ? Math.max(...sc.map((s) => s.pct)) : null;
+    my.forEach((a, i) => rows.push({ q, a, sc: sc[i] || null, best: sc[i] && sc[i].pct === bestPct && sc.findIndex((s) => s.pct === bestPct) === i })); });
+  rows.sort((x, y) => (ts(y.a.submittedAt) || 0) - (ts(x.a.submittedAt) || 0));
+  let term = secGet("rterm") || ""; const terms = termsOf(done); if (!terms.includes(term)) term = "";
+  const draw = () => {
+    const R = rows.filter((r) => !term || r.q.term === term);
+    const perQ = {}; R.forEach((r) => { if (r.sc && (!perQ[r.q.id] || r.sc.pct > perQ[r.q.id].pct)) perQ[r.q.id] = r.sc; });
+    const bests = Object.values(perQ), avg = bests.length ? Math.round(bests.reduce((s, x) => s + x.pct, 0) / bests.length) : 0;
+    const passedN = Object.entries(perQ).filter(([qid, s]) => s.right >= passOf(qMap[qid], s.total)).length;
+    main.innerHTML = `<div class="page-head"><div><h1>سجل التدريب</h1><p class="sub">كل محاولاتك في الاختبارات التدريبية — تُحتسب أفضل نتيجة لكل اختبار</p></div>
+      <div class="row">${termSel(terms, term)}<button class="btn ghost" id="xl">⬇ Excel</button><button class="btn ghost" id="pdf">⬇ PDF</button></div></div>
+      <div class="grid g3" style="margin-bottom:16px"><div class="stat"><div class="n">${new Set(R.map((r) => r.q.id)).size}</div><div class="l">اختبار تدرّبت عليه</div></div>
+        <div class="stat"><div class="n">${R.length}</div><div class="l">محاولة</div></div><div class="stat"><div class="n">${avg}%</div><div class="l">متوسط أفضل النتائج · نجحت في ${passedN}</div></div></div>
+      <div class="card">${R.length ? `<div class="tbl-wrap"><table><thead><tr><th>الاختبار</th><th>الفصل</th><th>المحاولة</th><th>التاريخ</th><th>الدرجة</th><th>النسبة</th><th>النتيجة</th><th></th></tr></thead><tbody>
+        ${R.map((r) => { const ps = r.sc && r.sc.right >= passOf(r.q, r.sc.total); return `<tr><td><b>${esc(r.q.title)}</b></td><td class="muted">${esc(r.q.term || "—")}</td><td>${r.a.n}${r.best ? " ⭐" : ""}</td><td class="muted">${fmt(r.a.submittedAt)}</td>
+          <td>${r.sc ? `${r.sc.right} / ${r.sc.total}` : "—"}</td><td>${r.sc ? pctPill(r.sc.pct) : `<span class="muted">لم تُعلن</span>`}</td><td>${r.sc ? `<span class="pill ${ps ? "ok" : "bad"}">${ps ? "ناجح" : "راسب"}</span>` : ""}</td>
+          <td><a class="btn link sm" href="#/quiz/${r.q.id}">عرض</a></td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">لم تحل أي اختبار بعد. <a href="#/quizzes">ابدأ التدريب</a></div>`}</div>`;
+    if ($("#termf")) $("#termf").onchange = (e) => { term = e.target.value; secSet("rterm", term); draw(); };
+    const table = () => [["الاختبار", "الفصل الدراسي", "المحاولة", "التاريخ", "الدرجة", "من", "النسبة %", "النتيجة", "أفضل محاولة"], ...R.map((r) => [r.q.title, r.q.term || "", r.a.n, ts(r.a.submittedAt)?.toLocaleString("ar-AE") || "", r.sc?.right ?? "", r.sc?.total ?? "", r.sc?.pct ?? "", r.sc ? (r.sc.right >= passOf(r.q, r.sc.total) ? "ناجح" : "راسب") : "", r.best ? "✓" : ""])];
+    $("#xl").onclick = () => downloadXlsx(`سجل التدريب - ${S.me.name}`, table());
+    $("#pdf").onclick = () => printTable(`سجل التدريب — ${S.me.name}`, `${S.me.className || ""}${term ? " · " + term : ""} · ${new Date().toLocaleDateString("ar-AE")}`, table());
+  };
+  draw();
 }
 
 async function sAssignments(main) {
