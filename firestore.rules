@@ -153,7 +153,7 @@ service cloud.firestore {
     match /homework/{hid} {
       allow read: if isTeacher() || (isStudent() && (resource == null || resource.data.studentId == uid()));
       allow create: if isStudent()
-        && keysOnly(['assignmentId', 'studentId', 'text', 'link', 'submittedAt', 'graded', 'counted'])
+        && keysOnly(['assignmentId', 'studentId', 'text', 'link', 'files', 'submittedAt', 'graded', 'counted'])
         && request.resource.data.studentId == uid()
         && hid == request.resource.data.assignmentId + '_' + uid()
         && request.resource.data.graded == false && request.resource.data.counted == false
@@ -163,13 +163,14 @@ service cloud.firestore {
       allow update: if isTeacher()
         || (isStudent() && resource.data.studentId == uid()
             && resource.data.graded == false
-            && changedOnly(['text', 'link', 'submittedAt'])
+            && changedOnly(['text', 'link', 'files', 'submittedAt'])
             && hwTextOk());
       allow delete: if isTeacher();
       function hwTextOk() {
         return request.resource.data.text is string && request.resource.data.text.size() <= 5000
           && request.resource.data.link is string && request.resource.data.link.size() <= 500
-          && request.resource.data.submittedAt == request.time;
+          && request.resource.data.submittedAt == request.time
+          && (!('files' in request.resource.data) || (request.resource.data.files is list && request.resource.data.files.size() <= 5));
       }
     }
 
@@ -205,6 +206,37 @@ service cloud.firestore {
               && request.resource.data.at == request.time);
         allow update, delete: if isTeacher();
       }
+    }
+
+    // ---------- الملفات المرفوعة من الكمبيوتر (تُحفظ على أجزاء) ----------
+    // ملفات المعلم (shared) يراها كل طالب مفعّل؛ ملف الطالب يراه هو والمعلم فقط
+    function fileOk(f) { return f.shared == true || f.owner == uid(); }
+    match /files/{fid} {
+      allow read: if isTeacher() || (isStudent() && fileOk(resource.data));
+      allow create: if isTeacher()
+        || (isStudent()
+            && keysOnly(['name', 'type', 'size', 'parts', 'owner', 'shared', 'createdAt'])
+            && request.resource.data.owner == uid()
+            && request.resource.data.shared == false
+            && request.resource.data.name is string && request.resource.data.name.size() <= 200
+            && request.resource.data.type is string && request.resource.data.type.size() <= 100
+            && request.resource.data.size is int && request.resource.data.size <= 5242880
+            && request.resource.data.parts is int && request.resource.data.parts >= 1 && request.resource.data.parts <= 6
+            && request.resource.data.createdAt == request.time);
+      allow update, delete: if isTeacher();
+    }
+    match /fileParts/{pid} {
+      allow read: if isTeacher()
+        || (isStudent() && fileOk(get(/databases/$(database)/documents/files/$(resource.data.fileId)).data));
+      allow create: if isTeacher()
+        || (isStudent()
+            && keysOnly(['fileId', 'i', 'data'])
+            && request.resource.data.i is int
+            && pid == request.resource.data.fileId + '_' + string(request.resource.data.i)
+            && request.resource.data.data is bytes && request.resource.data.data.size() <= 950000
+            && get(/databases/$(database)/documents/files/$(request.resource.data.fileId)).data.owner == uid()
+            && request.resource.data.i < get(/databases/$(database)/documents/files/$(request.resource.data.fileId)).data.parts);
+      allow update, delete: if isTeacher();
     }
 
     // أي شيء آخر ممنوع

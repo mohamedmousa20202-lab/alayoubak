@@ -477,3 +477,17 @@ th{background:var(--cream);color:var(--maroon)}
 .sec-tab.on{background:var(--maroon);color:#fff}
 .sec-head h3{color:var(--maroon)}
 .school-pill{background:var(--maroon)!important;color:#fff!important}
+/* الملفات المرفوعة */
+.modal{z-index:95}
+.att-list{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.att{display:inline-flex;align-items:center;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;max-width:100%}
+.att-open{display:inline-flex;align-items:center;gap:8px;background:none;border:0;padding:6px 10px 6px 8px;font:inherit;color:var(--ink);cursor:pointer;min-width:0;text-align:start}
+.att-open:hover{background:var(--cream)}
+.att .ext{background:var(--maroon);color:#fff;font-size:11px;font-weight:800;border-radius:6px;padding:2px 6px;direction:ltr;flex:none}
+.att .nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.att .sz{color:var(--muted);font-size:12px;direction:ltr;flex:none}
+.att-x{border:0;border-inline-start:1px solid var(--line);background:none;color:var(--danger);font-size:18px;padding:4px 10px;cursor:pointer}
+.att-view{margin-top:14px;padding:12px 14px;background:var(--cream);border:1px solid var(--line);border-radius:10px}
+.att-view .att-h{font-weight:800;color:var(--maroon);font-size:14px}
+.att-btn{cursor:pointer}
+.content img[data-fid],.qimg img[data-fid]{max-width:100%;border-radius:8px;min-height:40px;background:var(--cream)}

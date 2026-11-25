@@ -8,7 +8,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, getDocs,
-  query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, getCountFromServer, connectFirestoreEmulator
+  query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, increment, getCountFromServer, connectFirestoreEmulator, Bytes
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, TEACHER_EMAIL, SITE, STUDENT_DOMAIN } from "./config.js";
 import { ELEMENTS, CATS } from "./elements.js";
@@ -105,7 +105,9 @@ function inline(s) {
     .map((part, i) => (i % 2 ? `<a href="${esc(part)}" target="_blank" rel="noopener">${esc(part)}</a>` : chem(ltrRuns(esc(part))))).join("");
 }
 // نص السؤال: أسطر متعددة + صورة اختيارية (رابط https أو صورة داخل مجلد images في المنصة)
-const imgSrc = (u) => { const v = String(u || "").trim(); return /^https:\/\//i.test(v) || /^images\/[\w.\-]+$/i.test(v) ? v : ""; };
+const imgSrc = (u) => { const v = String(u || "").trim(); return /^https:\/\//i.test(v) || /^images\/[\w.\-]+$/i.test(v) || /^file:[\w-]+$/.test(v) ? v : ""; };
+// صورة: رابط عادي، أو ملف مرفوع من الكمبيوتر (file:ID) يُحمَّل من قاعدة البيانات
+const imgTag = (u, extra = "") => { const v = imgSrc(u); if (!v) return ""; return v.startsWith("file:") ? `<img data-fid="${esc(v.slice(5))}" alt="" ${extra}>` : `<img src="${esc(v)}" alt="" ${extra}>`; };
 // أسطر تبدأ بـ | تُعرض جدولاً (السطر الأول رأس الجدول)
 function textBlock(t) {
   const lines = String(t || "").split("\n"), out = []; let tb = [];
@@ -114,19 +116,102 @@ function textBlock(t) {
   lines.forEach((l) => { if (/^\s*\|/.test(l)) tb.push(l); else { flush(); out.push(`<div class="ql">${inline(l) || "&nbsp;"}</div>`); } });
   flush(); return out.join("");
 }
-const qText = (q) => textBlock(q.text) + (imgSrc(q.image) ? `<div class="qimg"><img src="${esc(imgSrc(q.image))}" alt="" loading="lazy"></div>` : "");
+const qText = (q) => textBlock(q.text) + (imgSrc(q.image) ? `<div class="qimg">${imgTag(q.image, 'loading="lazy"')}</div>` : "");
 function rich(text) {
   return String(text || "").split("\n").map((line) => {
     const L = line.trim();
     if (!L) return "<br>";
     if (L.startsWith("## ")) return `<h2>${inline(L.slice(3))}</h2>`;
     if (/^(img|صورة)\s*:\s*https:\/\//i.test(L)) { const u = safeUrl(L.replace(/^(img|صورة)\s*:\s*/i, "")); return u ? `<img src="${esc(u)}" alt="">` : ""; }
+    if (/^(img|صورة)\s*:\s*file:[\w-]+$/i.test(L)) return imgTag(L.replace(/^(img|صورة)\s*:\s*/i, ""));
     if (/^https:\/\/\S+$/.test(L) && ytId(L)) return videoBox(L);
     return `<div>${inline(L)}</div>`;
   }).join("");
 }
 const videoBox = (u) => { const id = ytId(u); return id ? `<div class="video"><iframe src="https://www.youtube.com/embed/${id}" allowfullscreen></iframe></div>` : ""; };
 const pdfBox = (u) => { const e = driveEmbed(u); const s = safeUrl(u); if (!s) return ""; return e ? `<div class="video" style="padding-top:120%"><iframe src="${esc(e)}"></iframe></div><a class="btn ghost sm" target="_blank" rel="noopener" href="${esc(s)}">فتح الملف في نافذة جديدة</a>` : `<a class="btn ghost" target="_blank" rel="noopener" href="${esc(s)}">📄 فتح الملف المرفق</a>`; };
+
+// ============================================================
+//   رفع الملفات من الكمبيوتر — تُحفظ على أجزاء داخل قاعدة البيانات (مجاناً، بدون Firebase Storage)
+// ============================================================
+const PART = 900 * 1024, MAX_T = 25 * 1048576, MAX_S = 5 * 1048576;
+const fsize = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
+const fext = (a) => { const e = (String(a.name || "").match(/\.([a-z0-9]{1,5})$/i) || [, ""])[1].toUpperCase(); return e || (/^image\//.test(a.type) ? "IMG" : "FILE"); };
+async function uploadFile(file, onProg = () => {}) {
+  const max = isTeacher() ? MAX_T : MAX_S;
+  if (!file.size) throw new Error(`الملف «${file.name}» فارغ.`);
+  if (file.size > max) throw new Error(`حجم «${file.name}» (${fsize(file.size)}) أكبر من الحد المسموح ${fsize(max)}.`);
+  const buf = new Uint8Array(await file.arrayBuffer()), parts = Math.ceil(buf.length / PART);
+  const ref = doc(col("files"));
+  const meta = { name: file.name.slice(0, 200), type: (file.type || "application/octet-stream").slice(0, 100), size: buf.length, parts, owner: auth.currentUser.uid, shared: isTeacher(), createdAt: serverTimestamp() };
+  await setDoc(ref, meta); onProg(0.02);
+  for (let i = 0; i < parts; i++) {
+    await setDoc(doc(db, "fileParts", `${ref.id}_${i}`), { fileId: ref.id, i, data: Bytes.fromUint8Array(buf.slice(i * PART, (i + 1) * PART)) });
+    onProg((i + 1) / parts);
+  }
+  return { id: ref.id, name: meta.name, type: meta.type, size: meta.size };
+}
+const fileCache = new Map();
+function fileUrl(id) {
+  if (fileCache.has(id)) return fileCache.get(id);
+  const p = (async () => {
+    const m = await getDoc(doc(db, "files", id)); if (!m.exists()) throw new Error("الملف غير موجود أو حُذف.");
+    const f = m.data();
+    const parts = await Promise.all([...Array(f.parts).keys()].map((i) => getDoc(doc(db, "fileParts", `${id}_${i}`))));
+    const blob = new Blob(parts.map((x) => x.data().data.toUint8Array()), { type: f.type });
+    return { url: URL.createObjectURL(blob), name: f.name, type: f.type, size: f.size };
+  })();
+  fileCache.set(id, p); p.catch(() => fileCache.delete(id)); return p;
+}
+async function openFile(id) {
+  openModal(`<div class="empty"><div class="spinner" style="margin:0 auto 10px"></div>جارٍ تحميل الملف...</div>`, "wide");
+  try {
+    const f = await fileUrl(id), t = f.type || "";
+    const view = /^image\//.test(t) ? `<img src="${f.url}" alt="" style="max-width:100%;display:block;margin:0 auto;border-radius:8px">`
+      : /pdf/.test(t) ? `<iframe src="${f.url}" style="width:100%;height:72vh;border:1px solid var(--line);border-radius:8px"></iframe>`
+      : /^video\//.test(t) ? `<video src="${f.url}" controls style="width:100%;border-radius:8px"></video>`
+      : /^audio\//.test(t) ? `<audio src="${f.url}" controls style="width:100%"></audio>`
+      : `<div class="empty">لا يمكن عرض هذا النوع داخل المنصة — نزّله وافتحه على جهازك.</div>`;
+    $("#modal-body").innerHTML = `<div class="row" style="margin-bottom:10px"><b>${esc(f.name)}</b><span class="muted" dir="ltr">${fsize(f.size)}</span><span class="spacer"></span>
+      <a class="btn sm" href="${f.url}" download="${esc(f.name)}">تنزيل</a><button class="btn ghost sm" data-close>إغلاق</button></div>${view}`;
+  } catch (e) { $("#modal-body").innerHTML = `<div class="err">${esc(e.message || errMsg(e))}</div><button class="btn ghost" data-close>إغلاق</button>`; }
+}
+const attChip = (a, extra = "") => `<span class="att"><button type="button" class="att-open" data-open-file="${esc(a.id)}"><span class="ext">${esc(fext(a))}</span><span class="nm">${esc(a.name)}</span><span class="sz">${fsize(a.size || 0)}</span></button>${extra}</span>`;
+const attachView = (list, title = "الملفات المرفقة") => (list?.length ? `<div class="att-view"><div class="att-h">${title}</div><div class="att-list">${list.map((a) => attChip(a)).join("")}</div></div>` : "");
+function attachField(label = "ملفات مرفقة من الكمبيوتر") {
+  return `<div class="field att-field"><label>${label}</label><div class="att-list"></div>
+    <div class="row"><label class="btn ghost sm att-btn">${icSvg("assignments", 16)} رفع ملف من الكمبيوتر<input type="file" multiple hidden></label><span class="att-prog muted"></span></div>
+    <p class="hint">PDF أو Word أو PowerPoint أو Excel أو صور أو فيديو قصير — حتى ${fsize(isTeacher() ? MAX_T : MAX_S)} للملف الواحد. يمكنك اختيار أكثر من ملف.</p></div>`;
+}
+function bindAttach(root, initial = []) {
+  const box = $(".att-field", root); let items = [...(initial || [])], busyN = 0;
+  const draw = () => { $(".att-list", box).innerHTML = items.map((a, i) => attChip(a, `<button type="button" class="att-x" data-attrm="${i}" aria-label="إزالة">×</button>`)).join("");
+    $$("[data-attrm]", box).forEach((b) => (b.onclick = () => { items.splice(+b.dataset.attrm, 1); draw(); })); };
+  $("input[type=file]", box).onchange = async (e) => {
+    const fs = [...e.target.files]; e.target.value = ""; const pr = $(".att-prog", box);
+    for (const f of fs) {
+      busyN++;
+      try { const a = await uploadFile(f, (p) => (pr.textContent = `جارٍ رفع «${f.name}» ${Math.round(p * 100)}%`)); items.push(a); draw(); toast(`تم رفع «${f.name}» ✓`); }
+      catch (err) { toast(err.message || errMsg(err)); }
+      finally { busyN--; if (!busyN) pr.textContent = ""; }
+    }
+  };
+  draw(); return { get: () => items, busy: () => busyN > 0 };
+}
+// زر «إدراج صورة من الكمبيوتر» يضيف سطر «صورة: file:...» داخل مربع نص
+const imgInsertBtn = (target) => `<label class="btn ghost sm">${icSvg("labs", 16)} إدراج صورة من الكمبيوتر<input type="file" accept="image/*" hidden data-ins="${target}"></label>`;
+function bindImgInsert(root) {
+  $$("[data-ins]", root).forEach((inp) => (inp.onchange = async () => {
+    const f = inp.files[0]; inp.value = ""; if (!f) return; const ta = $(`[name=${inp.dataset.ins}]`, root);
+    try { toast("جارٍ رفع الصورة..."); const a = await uploadFile(f); const pos = ta.selectionStart ?? ta.value.length;
+      const line = `\nصورة: file:${a.id}\n`; ta.value = ta.value.slice(0, pos) + line + ta.value.slice(pos); ta.dispatchEvent(new Event("input")); toast("تمت إضافة الصورة ✓"); }
+    catch (err) { toast(err.message || errMsg(err)); }
+  }));
+}
+// تحميل الصور المرفوعة تلقائياً أينما ظهرت + فتح الملفات عند الضغط عليها
+const hydrateImgs = () => $$("img[data-fid]:not([data-ld])").forEach((im) => { im.dataset.ld = "1"; fileUrl(im.dataset.fid).then((f) => (im.src = f.url)).catch(() => (im.alt = "تعذّر تحميل الصورة")); });
+new MutationObserver(hydrateImgs).observe(document.documentElement, { childList: true, subtree: true });
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-open-file]"); if (b) { e.preventDefault(); openFile(b.dataset.openFile); } });
 
 function classPicker(selected = []) {
   return `<div class="field"><label>الصفوف المستهدفة <span class="muted">(اتركها كلها فارغة = جميع الطلاب)</span></label><div class="row">${
@@ -373,10 +458,10 @@ async function rebuildCatalog() {
   const [l, q, a, an, bk, lb, ev] = await Promise.all(["lessons", "quizzes", "assignments", "announcements", "banks", "labs", "events"].map(all));
   const pick = (o, ks) => Object.fromEntries(ks.filter((k) => o[k] !== undefined && o[k] !== null).map((k) => [k, o[k]]));
   await setDoc(doc(db, "meta", "catalog"), {
-    lessons: l.filter((x) => x.published).map((x) => ({ ...pick(x, ["id", "title", "unit", "order", "classes", "createdAt"]), v: !!x.videoUrl, p: !!x.pdfUrl })),
+    lessons: l.filter((x) => x.published).map((x) => ({ ...pick(x, ["id", "title", "unit", "order", "classes", "createdAt"]), v: !!x.videoUrl, p: !!x.pdfUrl || !!x.attachments?.length })),
     quizzes: q.filter((x) => x.published).map((x) => pick(x, ["id", "title", "count", "classes", "open", "showResults", "timeLimit", "totalPoints", "createdAt"])),
     assignments: a.filter((x) => x.published).map((x) => pick(x, ["id", "title", "due", "maxGrade", "classes", "createdAt"])),
-    announcements: an.sort(byDate).slice(0, 30).map((x) => pick(x, ["id", "title", "body", "classes", "createdAt"])),
+    announcements: an.sort(byDate).slice(0, 30).map((x) => pick(x, ["id", "title", "body", "attachments", "classes", "createdAt"])),
     banks: bk.filter((x) => x.published).map((x) => pick(x, ["id", "title", "unit", "count", "classes", "createdAt"])),
     labs: lb.filter((x) => x.published).map((x) => ({ ...pick(x, ["id", "title", "unit", "classes", "createdAt"]), sim: !!x.simUrl })),
     events: ev.filter((x) => ts(x.date) > new Date(Date.now() - 100 * 864e5)).map((x) => pick(x, ["id", "title", "date", "type", "note", "classes"])),
@@ -558,17 +643,19 @@ async function tLessonEdit(main, id) {
   <form class="card" id="lf">
     <div class="grid g3"><div class="field" style="grid-column:span 2"><label>عنوان الدرس</label><input type="text" name="title" value="${esc(l.title)}" required></div>
       <div class="field"><label>الوحدة / الفصل</label><input type="text" name="unit" value="${esc(l.unit)}" placeholder="الوحدة 3: الغازات"></div></div>
-    <div class="field"><label>محتوى الدرس</label><textarea name="body" style="min-height:260px">${esc(l.body)}</textarea>
+    <div class="field"><label>محتوى الدرس</label><textarea name="body" style="min-height:260px">${esc(l.body)}</textarea><div style="margin-top:6px">${imgInsertBtn("body")}</div>
       <p class="hint">تنسيقات سريعة: <b>## عنوان فرعي</b> · <b>**نص غامق**</b> · H_2O تُكتب H₂O · Na^+ تُكتب Na⁺ · <b>صورة: https://...</b> في سطر مستقل · رابط يوتيوب في سطر مستقل يظهر كفيديو</p></div>
     <div class="grid g2"><div class="field"><label>رابط فيديو يوتيوب (اختياري)</label><input type="url" name="video" dir="ltr" value="${esc(l.videoUrl)}" placeholder="https://youtu.be/..."></div>
       <div class="field"><label>رابط ملف PDF على Google Drive (اختياري)</label><input type="url" name="pdf" dir="ltr" value="${esc(l.pdfUrl)}" placeholder="https://drive.google.com/file/d/..."><p class="hint">اجعل مشاركة الملف «أي شخص لديه الرابط».</p></div></div>
+    ${attachField("ملفات الدرس من الكمبيوتر (ملزمة، عرض تقديمي، أوراق عمل…)")}
     ${classPicker(l.classes)}
     <div class="row"><label class="check"><input type="checkbox" name="pub" ${l.published ? "checked" : ""}> نشر الدرس للطلاب</label>
       <span class="spacer"></span>${isNew ? "" : `<button type="button" class="btn ghost danger" id="del" style="color:var(--danger)">حذف</button>`}<button class="btn">حفظ</button></div>
   </form>`;
+  const att = bindAttach($("#lf"), l.attachments); bindImgInsert($("#lf"));
   $("#lf").onsubmit = async (e) => {
-    e.preventDefault(); const f = e.target; busy($("button:last-child", f), true);
-    const data = { title: f.title.value.trim(), unit: f.unit.value.trim(), body: f.body.value, videoUrl: f.video.value.trim(), pdfUrl: f.pdf.value.trim(), published: f.pub.checked, classes: pickedClasses(f), order: l.order || 0 };
+    e.preventDefault(); const f = e.target; if (att.busy()) return toast("انتظر حتى ينتهي رفع الملفات"); busy($("button:last-child", f), true);
+    const data = { title: f.title.value.trim(), unit: f.unit.value.trim(), body: f.body.value, videoUrl: f.video.value.trim(), pdfUrl: f.pdf.value.trim(), attachments: att.get(), published: f.pub.checked, classes: pickedClasses(f), order: l.order || 0 };
     if (isNew) await addDoc(collection(db, "lessons"), { ...data, createdAt: serverTimestamp() }); else await updateDoc(doc(db, "lessons", id), data);
     await rebuildCatalog(); toast("تم حفظ الدرس ✓"); go("lessons");
   };
@@ -628,6 +715,7 @@ async function tQuizEdit(main, id) {
   <div class="card">
     <div class="field"><label>عنوان الاختبار</label><input type="text" name="title" value="${esc(q.title)}" required></div>
     <div class="field"><label>تعليمات (اختياري)</label><input type="text" name="desc" value="${esc(q.description)}"></div>
+    ${attachField("ملفات مع الاختبار (جدول دوري، ورقة قوانين…) — تظهر للطالب قبل البدء")}
     ${classPicker(q.classes)}
     <div class="grid g3"><div class="field"><label>زمن الاختبار بالدقائق <span class="muted">(0 = بدون وقت)</span></label><input type="number" name="time" min="0" max="600" value="${q.timeLimit || 0}"></div>
       <div class="field"><label>الدرجة الكلية</label><input type="text" id="totpts" disabled></div>
@@ -647,8 +735,9 @@ async function tQuizEdit(main, id) {
       <div class="row" style="margin-bottom:8px"><b>سؤال ${i + 1}</b><span class="spacer"></span><button type="button" class="btn link sm" data-up="${i}">↑</button><button type="button" class="btn link sm" data-dn="${i}">↓</button><button type="button" class="btn link sm danger" data-rm="${i}">حذف</button></div>
       <textarea data-f="text" style="min-height:60px" placeholder="نص السؤال (يمكن كتابة أكثر من سطر)">${esc(x.text)}</textarea>
       <div class="row" style="margin-top:6px;flex-wrap:nowrap"><label style="margin:0;white-space:nowrap">الدرجة</label><input type="number" data-f="points" min="0.5" step="0.5" value="${x.points || 1}" style="width:80px">
-        <input type="text" data-f="image" dir="ltr" value="${esc(x.image || "")}" placeholder="رابط صورة للسؤال (اختياري) https://..." style="flex:1"></div>
-      ${imgSrc(x.image) ? `<div class="qimg" style="margin-top:6px"><img src="${esc(imgSrc(x.image))}" alt=""></div>` : ""}
+        <input type="text" data-f="image" dir="ltr" value="${esc(x.image || "")}" placeholder="صورة للسؤال (اختياري): رابط https أو ارفعها ←" style="flex:1">
+        <label class="btn ghost sm" style="white-space:nowrap">رفع صورة<input type="file" accept="image/*" hidden data-qimg="${i}"></label></div>
+      ${imgSrc(x.image) ? `<div class="qimg" style="margin-top:6px">${imgTag(x.image)}</div>` : ""}
       <div class="row" style="margin-top:6px;flex-wrap:nowrap"><input type="text" data-f="outcome" value="${esc(x.outcome || "")}" placeholder="ناتج التعلم (اختياري)" style="flex:2"><input type="text" data-f="ocode" dir="ltr" value="${esc(x.ocode || "")}" placeholder="CHM.5.5.01.001.07" style="flex:1"></div>
       <p class="hint" style="margin:6px 0">اختر الدائرة بجانب الإجابة الصحيحة:</p>
       <div class="opts">${x.options.map((o, j) => `<input type="radio" name="ans${i}" value="${j}" ${x.answer === j ? "checked" : ""} style="accent-color:var(--ok);width:18px;height:18px">
@@ -663,6 +752,13 @@ async function tQuizEdit(main, id) {
     x.options = $$("[data-o]", el).map((i) => i.value); const r = $(`input[name=ans${el.dataset.i}]:checked`, el); x.answer = r ? +r.value : 0;
   });
   draw();
+  const att = bindAttach($("#qf"), q.attachments);
+  $("#qs").addEventListener("change", async (e) => {
+    const inp = e.target.closest("[data-qimg]"); if (!inp) return; const f = inp.files[0]; inp.value = ""; if (!f) return;
+    sync(); const qi = +inp.dataset.qimg;
+    try { toast("جارٍ رفع الصورة..."); const a = await uploadFile(f); questions[qi].image = "file:" + a.id; draw(); toast("تمت إضافة الصورة ✓"); }
+    catch (err) { toast(err.message || errMsg(err)); }
+  });
   $("#qs").onclick = (e) => {
     const b = e.target.closest("button"); if (!b) return; sync(); const qi = +b.closest(".qedit").dataset.i;
     if (b.dataset.rm != null) questions.splice(qi, 1);
@@ -700,9 +796,10 @@ async function tQuizEdit(main, id) {
     const bad = clean.findIndex((x) => !x.text || x.options.some((o) => !o));
     if (!clean.length) return toast("أضف سؤالاً واحداً على الأقل");
     if (bad >= 0) { toast(`أكمل نص السؤال ${bad + 1} وجميع خياراته`); $$(".qedit")[bad].scrollIntoView({ behavior: "smooth" }); return; }
+    if (att.busy()) return toast("انتظر حتى ينتهي رفع الملفات");
     busy($("#save"), true);
     const points = clean.map((x) => +x.points || 1);
-    const pub = { title: f.title.value.trim(), description: f.desc.value.trim(), classes: pickedClasses(f), published: f.pub.checked, open: f.open.checked, showResults: f.show.checked,
+    const pub = { title: f.title.value.trim(), description: f.desc.value.trim(), attachments: att.get(), classes: pickedClasses(f), published: f.pub.checked, open: f.open.checked, showResults: f.show.checked,
       timeLimit: Math.max(0, Math.round(+f.time.value || 0)), shuffle: f.shuffle.checked, totalPoints: points.reduce((a, b) => a + b, 0),
       questions: clean.map((x, i) => ({ text: x.text, options: x.options, points: points[i], ...(x.image ? { image: x.image } : {}), ...(x.outcome ? { outcome: x.outcome } : {}), ...(x.ocode ? { ocode: x.ocode } : {}) })), count: clean.length };
     const key = { answers: clean.map((x) => x.answer), explanations: clean.map((x) => x.explanation.trim()), points };
@@ -769,16 +866,18 @@ async function tAssignEdit(main, id) {
   const dueVal = a.due ? new Date(ts(a.due).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
   main.innerHTML = `<div class="page-head"><h1>${isNew ? "واجب جديد" : "تعديل الواجب"}</h1><a class="btn ghost" href="#/assignments">رجوع</a></div>
   <form class="card" id="af"><div class="field"><label>عنوان الواجب</label><input type="text" name="title" value="${esc(a.title)}" required></div>
-    <div class="field"><label>المطلوب</label><textarea name="body">${esc(a.body)}</textarea></div>
+    <div class="field"><label>المطلوب</label><textarea name="body">${esc(a.body)}</textarea><div style="margin-top:6px">${imgInsertBtn("body")}</div></div>
+    ${attachField("ملفات الواجب من الكمبيوتر (ورقة العمل مثلاً)")}
     <div class="grid g3"><div class="field"><label>رابط ملف مرفق (اختياري)</label><input type="url" name="link" dir="ltr" value="${esc(a.link)}"></div>
       <div class="field"><label>آخر موعد للتسليم</label><input type="datetime-local" name="due" value="${dueVal}"></div>
       <div class="field"><label>الدرجة العظمى</label><input type="number" name="max" min="1" value="${a.maxGrade}"></div></div>
     ${classPicker(a.classes)}
     <div class="row"><label class="check"><input type="checkbox" name="pub" ${a.published ? "checked" : ""}> نشر للطلاب</label><span class="spacer"></span>
     ${isNew ? "" : `<button type="button" class="btn ghost" id="del" style="color:var(--danger)">حذف</button>`}<button class="btn">حفظ</button></div></form>`;
+  const att = bindAttach($("#af"), a.attachments); bindImgInsert($("#af"));
   $("#af").onsubmit = async (e) => {
-    e.preventDefault(); const f = e.target;
-    const data = { title: f.title.value.trim(), body: f.body.value, link: f.link.value.trim(), due: f.due.value ? new Date(f.due.value) : null, maxGrade: +f.max.value || 10, published: f.pub.checked, classes: pickedClasses(f) };
+    e.preventDefault(); const f = e.target; if (att.busy()) return toast("انتظر حتى ينتهي رفع الملفات");
+    const data = { title: f.title.value.trim(), body: f.body.value, link: f.link.value.trim(), attachments: att.get(), due: f.due.value ? new Date(f.due.value) : null, maxGrade: +f.max.value || 10, published: f.pub.checked, classes: pickedClasses(f) };
     if (isNew) await addDoc(collection(db, "assignments"), { ...data, createdAt: serverTimestamp() }); else await updateDoc(doc(db, "assignments", id), data);
     await rebuildCatalog(); toast("تم الحفظ ✓"); go("assignments");
   };
@@ -794,7 +893,7 @@ async function tAssignSubs(main, id) {
   main.innerHTML = `<div class="page-head"><div><h1>تسليمات: ${esc(a.title)}</h1><p class="sub">${hw.length} تسليم · ${missing.length} لم يسلّم</p></div><a class="btn ghost" href="#/assignments">رجوع</a></div>
   ${hw.map((h) => { const s = sMap[h.studentId] || { name: "(طالب محذوف)" }; const late = a.due && ts(h.submittedAt) > ts(a.due);
     return `<div class="card"><div class="row"><b>${esc(s.name)}</b><span class="muted">${esc(s.className || "")}</span>${late ? `<span class="pill bad">متأخر</span>` : ""}<span class="spacer"></span><span class="muted">${fmt(h.submittedAt)}</span></div>
-    <div class="content" style="margin:10px 0;font-size:16px">${rich(h.text)}</div>${safeUrl(h.link) ? `<a target="_blank" rel="noopener" href="${esc(safeUrl(h.link))}">🔗 الملف المرفق</a>` : ""}
+    <div class="content" style="margin:10px 0;font-size:16px">${rich(h.text)}</div>${safeUrl(h.link) ? `<a target="_blank" rel="noopener" href="${esc(safeUrl(h.link))}">🔗 الملف المرفق</a>` : ""}${attachView(h.files, "ملفات الطالب")}
     <form class="row" data-g="${h.id}" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px"><input type="number" name="g" min="0" max="${a.maxGrade}" step="0.5" value="${h.grade ?? ""}" placeholder="الدرجة" style="width:100px" required> <span class="muted">من ${a.maxGrade}</span>
     <input type="text" name="fb" value="${esc(h.feedback || "")}" placeholder="ملاحظة للطالب (اختياري)" style="flex:1;min-width:180px"><button class="btn sm">${h.grade != null ? "تحديث" : "حفظ الدرجة"}</button></form></div>`; }).join("") || `<div class="card empty">لا توجد تسليمات بعد.</div>`}
   ${missing.length ? `<details class="card"><summary style="cursor:pointer"><b>لم يسلّموا (${missing.length})</b></summary><div class="row" style="margin-top:10px">${missing.map((s) => `<span class="pill gray">${esc(s.name)}</span>`).join("")}</div></details>` : ""}`;
@@ -806,9 +905,10 @@ async function tAnnouncements(main) {
   const an = (await all("announcements")).sort(byDate);
   main.innerHTML = `<div class="page-head"><h1>الإعلانات</h1></div>
   <form class="card" id="nf"><div class="field"><label>إعلان جديد</label><input type="text" name="title" placeholder="العنوان" required style="margin-bottom:8px"><textarea name="body" placeholder="نص الإعلان" style="min-height:80px"></textarea></div>
-    ${classPicker([])}<button class="btn">نشر الإعلان</button></form>
-  <div class="card">${an.map((x) => `<div class="item">${elChip("announcements", "ic")}<div class="body"><div class="t">${esc(x.title)}</div><div class="m">${fmt(x.createdAt)} ${classLabel(x.classes)}</div><div style="margin-top:6px">${rich(x.body)}</div></div><button class="btn link sm danger" data-del="${x.id}">حذف</button></div>`).join("") || `<div class="empty">لا توجد إعلانات.</div>`}</div>`;
-  $("#nf").onsubmit = async (e) => { e.preventDefault(); const f = e.target; await addDoc(collection(db, "announcements"), { title: f.title.value.trim(), body: f.body.value, classes: pickedClasses(f), createdAt: serverTimestamp() }); await rebuildCatalog(); toast("تم النشر ✓"); route(); };
+    ${attachField("ملفات مع الإعلان (اختياري)")}${classPicker([])}<button class="btn">نشر الإعلان</button></form>
+  <div class="card">${an.map((x) => `<div class="item">${elChip("announcements", "ic")}<div class="body"><div class="t">${esc(x.title)}</div><div class="m">${fmt(x.createdAt)} ${classLabel(x.classes)}</div><div style="margin-top:6px">${rich(x.body)}</div>${attachView(x.attachments)}</div><button class="btn link sm danger" data-del="${x.id}">حذف</button></div>`).join("") || `<div class="empty">لا توجد إعلانات.</div>`}</div>`;
+  const att = bindAttach($("#nf"));
+  $("#nf").onsubmit = async (e) => { e.preventDefault(); const f = e.target; if (att.busy()) return toast("انتظر حتى ينتهي رفع الملفات"); await addDoc(collection(db, "announcements"), { title: f.title.value.trim(), body: f.body.value, attachments: att.get(), classes: pickedClasses(f), createdAt: serverTimestamp() }); await rebuildCatalog(); toast("تم النشر ✓"); route(); };
   $$("[data-del]", main).forEach((b) => (b.onclick = async () => { if (confirm("حذف الإعلان؟")) { await deleteDoc(doc(db, "announcements", b.dataset.del)); await rebuildCatalog(); route(); } }));
 }
 
@@ -898,7 +998,7 @@ async function sHome(main) {
   ${pendQ.length > 1 ? `<div class="card"><h3>اختبارات أخرى بانتظارك</h3>${pendQ.slice(1).map((q) => `<div class="item clickable" onclick="location.hash='#/quiz/${q.id}'">${elChip("quizzes", "ic")}<div class="body"><div class="t">${esc(q.title)}</div><div class="m">${q.count} سؤال</div></div><span class="btn sm">ابدأ</span></div>`).join("")}</div>` : ""}
   <div class="grid g2">
     <div class="card"><h3>واجبات مطلوبة</h3>${pendA.map((a) => `<div class="item clickable" onclick="location.hash='#/assign/${a.id}'">${elChip("assignments", "ic")}<div class="body"><div class="t">${esc(a.title)}</div><div class="m">${a.due ? "حتى " + fmt(a.due) : ""}</div></div><span class="btn sm">سلّم</span></div>`).join("") || `<p class="muted">لا توجد واجبات مطلوبة.</p>`}</div>
-    <div class="card"><h3>الإعلانات</h3>${news.map((x) => `<div class="item"><div class="body"><div class="t">${esc(x.title)}</div><div class="m">${fmt(x.createdAt)}</div><div style="margin-top:4px">${rich(x.body)}</div></div></div>`).join("") || `<p class="muted">لا توجد إعلانات.</p>`}</div>
+    <div class="card"><h3>الإعلانات</h3>${news.map((x) => `<div class="item"><div class="body"><div class="t">${esc(x.title)}</div><div class="m">${fmt(x.createdAt)}</div><div style="margin-top:4px">${rich(x.body)}</div>${attachView(x.attachments)}</div></div>`).join("") || `<p class="muted">لا توجد إعلانات.</p>`}</div>
   </div>`;
 }
 async function sLessons(main) {
@@ -909,7 +1009,7 @@ async function sLessons(main) {
 async function sLesson(main, id) {
   const s = await getDoc(doc(db, "lessons", id)); if (!s.exists()) return go("lessons"); const l = s.data();
   main.innerHTML = `<div class="page-head"><div><p class="sub">${esc(l.unit || "")}</p><h1>${esc(l.title)}</h1></div><a class="btn ghost" href="#/lessons">رجوع</a></div>
-  <div class="card">${l.videoUrl ? videoBox(l.videoUrl) : ""}<div class="content">${rich(l.body)}</div>${l.pdfUrl ? `<div style="margin-top:14px">${pdfBox(l.pdfUrl)}</div>` : ""}</div>`;
+  <div class="card">${l.videoUrl ? videoBox(l.videoUrl) : ""}<div class="content">${rich(l.body)}</div>${l.pdfUrl ? `<div style="margin-top:14px">${pdfBox(l.pdfUrl)}</div>` : ""}${attachView(l.attachments)}</div>`;
   if (!isTeacher()) { const vr = doc(db, "views", `${id}_${S.me.id}`); getDoc(vr).then((v) => { if (!v.exists()) return setDoc(vr, { lessonId: id, studentId: S.me.id, viewedAt: serverTimestamp(), counted: false }); }).catch(() => {}); }
 }
 async function sQuizzes(main) {
@@ -1004,7 +1104,7 @@ async function sQuiz(main, id) {
         <div class="sa-card"><div><div class="v">${total}</div><div class="l">الدرجة الكلية</div></div></div>
         <div class="sa-card"><div><div class="v">${q.timeLimit ? q.timeLimit + " دقيقة" : "مفتوح"}</div><div class="l">زمن الاختبار</div></div></div>
         <div class="sa-card"><div><div class="v">${Math.ceil(total * 0.5)}</div><div class="l">درجة النجاح</div></div></div></div>
-      ${q.description ? `<p class="sa-desc">${esc(q.description)}</p>` : ""}
+      ${q.description ? `<p class="sa-desc">${esc(q.description)}</p>` : ""}${attachView(q.attachments, "ملفات مساعدة للاختبار")}
       <ul class="rules"><li>يظهر سؤال واحد في كل شاشة؛ تنقّل بالأسهم أو من قائمة الأسئلة ☰.</li>
         <li>استخدم 🔖 لوضع علامة مراجعة على أي سؤال، والأداة <u><b>S</b></u> لشطب الخيارات التي تستبعدها.</li>
         <li>لا يمكنك التسليم قبل الاطلاع على جميع الأسئلة.</li>
@@ -1070,7 +1170,7 @@ async function sQuiz(main, id) {
     };
     const instructions = () => saDialog(`<div class="sa-dh"><h2>تعليمات القسم</h2><button class="sa-x" data-x>×</button></div>
       <div class="sa-db"><p>فيما يلي تعليمات هذا القسم.</p>${q.timeLimit ? `<p>لديك ${q.timeLimit} دقيقة لإكمال هذا القسم.</p>` : ""}${q.description ? `<p><b>${esc(q.description)}</b></p>` : ""}
-      <p class="muted">الأدوات المتاحة: قائمة الأسئلة، معلومات السؤال، الشطب، وضع علامة للمراجعة، وإعدادات سهولة الوصول.</p></div>
+      <p class="muted">الأدوات المتاحة: قائمة الأسئلة، معلومات السؤال، الشطب، وضع علامة للمراجعة، وإعدادات سهولة الوصول.</p>${attachView(q.attachments, "ملفات مساعدة")}</div>
       <div class="sa-df"><button class="sa-ok" data-x>إغلاق</button></div>`);
     const settings = () => {
       const d = saDialog(`<div class="sa-dh"><h2>إعدادات سهولة الوصول</h2><button class="sa-x" data-x>×</button></div>
@@ -1134,22 +1234,25 @@ async function sAssign(main, id) {
   const h = (await myQ("homework")).find((x) => x.assignmentId === id);
   const graded = h && h.graded === true;
   main.innerHTML = `<div class="page-head"><div><h1>${esc(a.title)}</h1><p class="sub">${a.due ? "آخر موعد: " + fmt(a.due) : ""} · الدرجة من ${a.maxGrade}</p></div><a class="btn ghost" href="#/assignments">رجوع</a></div>
-  <div class="card"><div class="content">${rich(a.body)}</div>${safeUrl(a.link) ? pdfBox(a.link) : ""}</div>
+  <div class="card"><div class="content">${rich(a.body)}</div>${safeUrl(a.link) ? pdfBox(a.link) : ""}${attachView(a.attachments)}</div>
   ${graded ? `<div class="card" style="border-inline-start:5px solid var(--ok)"><h3>الدرجة: ${h.grade} من ${a.maxGrade}</h3>${h.feedback ? `<p>ملاحظة المعلم: ${esc(h.feedback)}</p>` : ""}</div>` : ""}
   <form class="card" id="hf"><h3>${h ? "إجابتك" : "تسليم الواجب"}</h3>
     <div class="field"><label>الإجابة</label><textarea name="text" maxlength="5000" ${graded ? "disabled" : ""}>${esc(h?.text || "")}</textarea></div>
-    <div class="field"><label>رابط ملف (اختياري) — مثل صورة الحل على Google Drive</label><input type="url" name="link" dir="ltr" maxlength="500" value="${esc(h?.link || "")}" ${graded ? "disabled" : ""}></div>
+    ${graded ? attachView(h?.files, "ملفاتك المرفقة") : attachField("ارفع حلّك من الكمبيوتر أو الجوال (صورة أو PDF)")}
+    <div class="field"><label>أو رابط ملف (اختياري) — مثل Google Drive</label><input type="url" name="link" dir="ltr" maxlength="500" value="${esc(h?.link || "")}" ${graded ? "disabled" : ""}></div>
     ${graded ? "" : `<div class="row"><button class="btn">${h ? "تحديث التسليم" : "تسليم"}</button>${h ? `<span class="muted">آخر تسليم: ${fmt(h.submittedAt)}</span>` : ""}</div>`}</form>`;
   if (graded) return;
+  const att = bindAttach($("#hf"), h?.files);
   $("#hf").onsubmit = async (e) => {
-    e.preventDefault(); const f = e.target; const text = f.text.value.trim(), link = f.link.value.trim();
-    if (!text && !link) return toast("اكتب إجابة أو أضف رابطاً");
+    e.preventDefault(); const f = e.target; const text = f.text.value.trim(), link = f.link.value.trim(), files = att.get().slice(0, 5);
+    if (att.busy()) return toast("انتظر حتى ينتهي رفع الملفات");
+    if (!text && !link && !files.length) return toast("اكتب إجابة أو ارفع ملفاً");
     if (link && !safeUrl(link)) return toast("الرابط يجب أن يبدأ بـ https://");
     busy($("button", f), true);
     try {
       const ref = doc(db, "homework", `${id}_${S.me.id}`);
-      if (h) await updateDoc(ref, { text, link, submittedAt: serverTimestamp() });
-      else await setDoc(ref, { assignmentId: id, studentId: S.me.id, text, link, submittedAt: serverTimestamp(), graded: false, counted: false });
+      if (h) await updateDoc(ref, { text, link, files, submittedAt: serverTimestamp() });
+      else await setDoc(ref, { assignmentId: id, studentId: S.me.id, text, link, files, submittedAt: serverTimestamp(), graded: false, counted: false });
       toast("تم التسليم ✓"); route();
     } catch (err) { busy($("button", f), false); toast(errMsg(err)); }
   };
@@ -1293,19 +1396,21 @@ async function tBankEdit(main, id) {
   <form class="card" id="bf"><div class="grid g2"><div class="field"><label>العنوان</label><input type="text" name="title" value="${esc(b.title)}" required placeholder="مراجعة الغازات – الجزء 1"></div>
     <div class="field"><label>الوحدة</label><input type="text" name="unit" value="${esc(b.unit)}" placeholder="الوحدة 3: الغازات"></div></div>
     <div class="field"><label>الأسئلة <span class="muted">(نفس شكل لصق الاختبارات، وسطر فارغ بين كل سؤال)</span></label>
-    <textarea name="src" dir="auto" style="min-height:380px;font-size:15px" placeholder="1- ما عدد مولات O_2 في 32 g ؟&#10;أ) 0.5&#10;ب) 1&#10;ج) 2&#10;د) 4&#10;الإجابة: ب&#10;الشرح: الكتلة المولية 32 g/mol">${esc(b.src)}</textarea><p class="hint" id="pc"></p></div>
+    <div style="margin-bottom:6px">${imgInsertBtn("src")} <span class="hint">ضع المؤشر داخل السؤال قبل خياراته، ثم أدرج الصورة.</span></div><textarea name="src" dir="auto" style="min-height:380px;font-size:15px" placeholder="1- ما عدد مولات O_2 في 32 g ؟&#10;أ) 0.5&#10;ب) 1&#10;ج) 2&#10;د) 4&#10;الإجابة: ب&#10;الشرح: الكتلة المولية 32 g/mol">${esc(b.src)}</textarea><p class="hint" id="pc"></p></div>
+    ${attachField("ملفات مع المجموعة (ملزمة أو حلول بصيغة PDF مثلاً)")}
     ${classPicker(b.classes)}
     <div class="row"><label class="check"><input type="checkbox" name="pub" ${b.published ? "checked" : ""}> نشر للطلاب</label><span class="spacer"></span>${isNew ? "" : `<button type="button" class="btn ghost" id="del" style="color:var(--danger)">حذف</button>`}<button class="btn" id="save">حفظ</button></div></form>`;
-  const f = $("#bf");
+  const f = $("#bf"); const att = bindAttach(f, b.attachments); bindImgInsert(f);
   const check = () => { const qs = parseBulk(f.src.value); const miss = qs.map((q, i) => (q.answer < 0 ? i + 1 : 0)).filter(Boolean);
     $("#pc").innerHTML = `تم التعرف على <b>${qs.length}</b> سؤال${miss.length ? ` — <span style="color:var(--danger)">بدون إجابة محددة: ${miss.join("، ")}</span>` : ""}`; return { qs, miss }; };
   f.src.oninput = check; check();
   f.onsubmit = async (e) => {
     e.preventDefault(); const { qs, miss } = check();
     if (!qs.length) return toast("لم أتعرف على أي سؤال"); if (miss.length) return toast(`حدّد الإجابة للأسئلة: ${miss.join("، ")}`);
+    if (att.busy()) return toast("انتظر حتى ينتهي رفع الملفات");
     busy($("#save"), true);
     const data = { title: f.title.value.trim(), unit: f.unit.value.trim(), src: f.src.value, classes: pickedClasses(f), published: f.pub.checked,
-      questions: qs.map((q) => ({ text: q.text, options: q.options, answer: q.answer, explanation: q.explanation || "" })), count: qs.length };
+      questions: qs.map((q) => ({ text: q.text, options: q.options, answer: q.answer, explanation: q.explanation || "", ...(q.image ? { image: q.image } : {}) })), attachments: att.get(), count: qs.length };
     if (isNew) await addDoc(col("banks"), { ...data, createdAt: serverTimestamp() }); else await updateDoc(doc(db, "banks", id), data);
     await rebuildCatalog(); toast("تم الحفظ ✓"); go("bank");
   };
@@ -1325,7 +1430,7 @@ async function sBankQ(main, id) {
     main.innerHTML = `<div class="page-head"><div><h1>${esc(b.title)}</h1><p class="sub">${esc(b.unit || "")} · ${b.questions.length} سؤال في المجموعة</p></div><a class="btn ghost" href="${back}">رجوع</a></div>
     <div class="card row sticky-score"><span>عدد الأسئلة:</span><select id="bn" style="width:auto">${[5, 10, 20, 30].filter((x) => x < b.questions.length).map((x) => `<option ${x === n ? "selected" : ""}>${x}</option>`).join("")}<option value="${b.questions.length}" ${n === b.questions.length ? "selected" : ""}>الكل (${b.questions.length})</option></select>
       <button class="btn ghost sm" id="again">🔀 أسئلة جديدة</button><span class="spacer"></span><b id="sc">صحيح 0 من 0</b></div>
-    ${set.map((q, k) => `<div class="q" data-k="${k}"><div class="qt"><span class="qn">${k + 1}</span>${inline(q.text)}</div>
+    ${attachView(b.attachments)}${set.map((q, k) => `<div class="q" data-k="${k}"><div class="qt"><span class="qn">${k + 1}</span><div style="flex:1">${qText(q)}</div></div>
       ${q.options.map((o, j) => `<button type="button" class="opt" data-j="${j}" style="width:100%;text-align:right;background:#fff;font:inherit">${LETTERS[j]}) ${inline(o)}</button>`).join("")}<div class="fb"></div></div>`).join("")}`;
     $$(".q[data-k]", main).forEach((qd) => {
       const q = set[+qd.dataset.k];
@@ -1356,16 +1461,19 @@ async function tLabEdit(main, id) {
   main.innerHTML = `<div class="page-head"><h1>${isNew ? "تجربة جديدة" : "تعديل التجربة"}</h1><a class="btn ghost" href="#/labs">رجوع</a></div>
   <form class="card" id="lf"><div class="grid g2"><div class="field"><label>عنوان التجربة</label><input type="text" name="title" value="${esc(l.title)}" required placeholder="قانون بويل"></div>
     <div class="field"><label>الوحدة</label><input type="text" name="unit" value="${esc(l.unit)}"></div></div>
-    <div class="field"><label>الهدف وخطوات التجربة</label><textarea name="body">${esc(l.body)}</textarea></div>
+    <div class="field"><label>الهدف وخطوات التجربة</label><textarea name="body">${esc(l.body)}</textarea><div style="margin-top:6px">${imgInsertBtn("body")}</div></div>
+    ${attachField("ملفات التجربة من الكمبيوتر (ورقة عمل، فيديو، صور…)")}
     <div class="field"><label>رابط المحاكاة (اختياري)</label><input type="url" name="sim" dir="ltr" value="${esc(l.simUrl)}" placeholder="https://phet.colorado.edu/sims/html/gas-properties/latest/gas-properties_ar_SA.html">
       <p class="hint">من موقع phet.colorado.edu افتح التجربة، ثم انسخ رابط تشغيلها (ينتهي بـ .html). اختر النسخة العربية إن وُجدت.</p></div>
     <div class="field"><label>رابط فيديو يوتيوب (اختياري)</label><input type="url" name="video" dir="ltr" value="${esc(l.videoUrl)}"></div>
     <div class="grid g2"><div class="field"><label>أسئلة قبل التجربة</label><textarea name="pre">${esc(l.pre)}</textarea></div><div class="field"><label>أسئلة بعد التجربة</label><textarea name="post">${esc(l.post)}</textarea></div></div>
     ${classPicker(l.classes)}
     <div class="row"><label class="check"><input type="checkbox" name="pub" ${l.published ? "checked" : ""}> نشر للطلاب</label><span class="spacer"></span>${isNew ? "" : `<button type="button" class="btn ghost" id="del" style="color:var(--danger)">حذف</button>`}<button class="btn">حفظ</button></div></form>`;
+  const att = bindAttach($("#lf"), l.attachments); bindImgInsert($("#lf"));
   $("#lf").onsubmit = async (e) => {
     e.preventDefault(); const f = e.target; if (f.sim.value.trim() && !safeUrl(f.sim.value)) return toast("رابط المحاكاة يجب أن يبدأ بـ https://");
-    const data = { title: f.title.value.trim(), unit: f.unit.value.trim(), body: f.body.value, simUrl: f.sim.value.trim(), videoUrl: f.video.value.trim(), pre: f.pre.value, post: f.post.value, classes: pickedClasses(f), published: f.pub.checked };
+    if (att.busy()) return toast("انتظر حتى ينتهي رفع الملفات");
+    const data = { title: f.title.value.trim(), unit: f.unit.value.trim(), body: f.body.value, attachments: att.get(), simUrl: f.sim.value.trim(), videoUrl: f.video.value.trim(), pre: f.pre.value, post: f.post.value, classes: pickedClasses(f), published: f.pub.checked };
     if (isNew) await addDoc(col("labs"), { ...data, createdAt: serverTimestamp() }); else await updateDoc(doc(db, "labs", id), data);
     await rebuildCatalog(); toast("تم الحفظ ✓"); go("labs");
   };
@@ -1379,7 +1487,7 @@ async function sLabs(main) {
 async function sLab(main, id) {
   const s = await getDoc(doc(db, "labs", id)); if (!s.exists()) return go("labs"); const l = s.data(); const sim = safeUrl(l.simUrl);
   main.innerHTML = `<div class="page-head"><div><p class="sub">${esc(l.unit || "")}</p><h1>🔬 ${esc(l.title)}</h1></div><a class="btn ghost" href="#/labs">رجوع</a></div>
-  ${l.body ? `<div class="card"><div class="content">${rich(l.body)}</div></div>` : ""}
+  ${l.body || l.attachments?.length ? `<div class="card"><div class="content">${rich(l.body)}</div>${attachView(l.attachments)}</div>` : ""}
   ${l.pre ? `<div class="card" style="border-inline-start:5px solid var(--accent)"><h3>🤔 قبل التجربة</h3><div class="content">${rich(l.pre)}</div></div>` : ""}
   ${sim ? `<div class="card"><div class="row" style="margin-bottom:8px"><h3 style="margin:0">المحاكاة</h3><span class="spacer"></span><a class="btn ghost sm" target="_blank" rel="noopener" href="${esc(sim)}">فتح بملء الشاشة ↗</a></div><div class="sim"><iframe src="${esc(sim)}" allowfullscreen loading="lazy"></iframe></div></div>` : ""}
   ${l.videoUrl ? `<div class="card">${videoBox(l.videoUrl)}</div>` : ""}
