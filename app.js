@@ -446,21 +446,23 @@ function shell(active) {
   $("#app").innerHTML = `
   <header class="apphead">
     <div class="ah-in">
-      <a class="ah-brand" href="#/${isTeacher() ? "dash" : "home"}"><span class="logo">${icSvg("labs", 24)}</span><span><b>${esc(SITE.title)}</b><small>${SITE.contact ? phone() : esc(SITE.teacher)}</small></span></a>
+      <a class="ah-brand" href="#/${isTeacher() ? "dash" : "home"}"><span class="logo">${icSvg("labs", 24)}</span><span><b>${esc(SITE.title)}</b><small dir="ltr">${SITE.contact ? "📞 " + esc(SITE.contact) : esc(SITE.teacher)}</small></span></a>
       <span class="spacer"></span>
       <div class="lang-sw" role="group" aria-label="Language"><button type="button" data-lang="ar" class="${uiLang() === "ar" ? "on" : ""}">عربي</button><button type="button" data-lang="en" class="${uiLang() === "en" ? "on" : ""}">English</button></div>
       <div class="ah-user"><span class="av">${esc(ini)}</span><span class="nm"><b>${esc(name)}</b><small>${esc(role)}${!isTeacher() && SITE.contact ? " · " : ""}${!isTeacher() && SITE.contact ? phone() : ""}</small></span></div>
       <button class="ah-out" id="logout" title="تسجيل الخروج"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>تسجيل الخروج</span></button>
       <button id="burger" class="ah-burger" aria-label="القائمة">☰</button>
     </div>
-    <nav class="nav ah-nav" id="side">${nav.filter(([k]) => k !== "honor" || SITE.honor !== false || isTeacher()).map(([k, i, l]) => (k === "-" ? `<span class="nav-sep" title="${esc(i)}"></span>` : `<a href="#/${k}" class="${active === k ? "on" : ""}" data-k="${k}">${icSvg(k, 17)}<span>${l}</span><span class="badge hidden"></span></a>`)).join("")}</nav>
   </header>
-  <main class="main" id="main"><div class="splash" style="min-height:40vh"><div class="spinner"></div></div></main>`;
+  <div class="ah-body">
+    <nav class="nav ah-side" id="side">${nav.filter(([k]) => k !== "honor" || SITE.honor !== false || isTeacher()).map(([k, i, l]) => (k === "-" ? `<div class="nav-sec">${i}</div>` : `<a href="#/${k}" class="${active === k ? "on" : ""}" data-k="${k}">${icSvg(k, 18)}<span>${l}</span><span class="badge hidden"></span></a>`)).join("")}</nav>
+  <main class="main" id="main"><div class="splash" style="min-height:40vh"><div class="spinner"></div></div></main>
+  </div>`;
   $("#logout").onclick = () => signOut(auth);
   $("#burger").onclick = () => $("#side").classList.toggle("open");
   $$(".nav a").forEach((a) => (a.onclick = () => $("#side").classList.remove("open")));
   $$(".lang-sw [data-lang]").forEach((b) => (b.onclick = () => { setUiLang(b.dataset.lang); route(); }));
-  const on = $(".ah-nav a.on"); if (on) on.scrollIntoView({ block: "nearest", inline: "nearest" });
+  
   Object.entries(S.badges || {}).forEach(([k, n]) => setBadge(k, n));
   return $("#main");
 }

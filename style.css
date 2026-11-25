@@ -580,3 +580,24 @@ body.en .page-head{border-inline-start:12px solid var(--maroon)}
 body.en th,body.en td{text-align:left}
 @media(max-width:480px){.ah-user{display:none}.ah-brand{flex:1;min-width:0}.ah-brand b{max-width:none;overflow:hidden;text-overflow:ellipsis}}
 .bi-edit,.bi-row{direction:ltr}
+
+/* ================= القائمة الجانبية الطولية على اليمين (تحت الرأس العلوي) ================= */
+.ah-body{display:grid;grid-template-columns:240px minmax(0,1fr);align-items:start;max-width:1440px;margin:0 auto}
+.ah-side{position:sticky;top:75px;height:calc(100vh - 75px);overflow-y:auto;background:#fff;border-inline-end:1px solid var(--line);padding:14px 10px 24px;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin}
+.ah-side a{display:flex;align-items:center;gap:10px;padding:9px 12px!important;border-radius:10px!important;color:var(--ink)!important;font-weight:700;font-size:14.5px;text-decoration:none;background:none!important;border-inline-start:4px solid transparent}
+.ah-side a svg{color:var(--bronze);flex:none}
+.ah-side a:hover{background:var(--cream)!important;color:var(--maroon)!important}
+.ah-side a.on{background:var(--maroon)!important;color:#fff!important}
+.ah-side a.on svg{color:#fff}
+.ah-side .badge{margin-inline-start:auto}
+.ah-side .nav-sec{font-size:12px;color:var(--bronze);font-weight:800;padding:14px 12px 4px;border-top:1px solid var(--band);margin-top:6px}
+.ah-body .main{max-width:1180px;margin:0 auto;width:100%}
+@media(max-width:900px){
+  .ah-body{grid-template-columns:1fr}
+  .ah-side{display:none;position:fixed;top:57px;inset-inline-start:0;bottom:0;height:auto;width:260px;z-index:45;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+  .ah-side.open{display:flex}
+}
+.ah-in{max-width:1440px}
+.ah-brand>span:last-child{display:flex;flex-direction:column;align-items:flex-start;min-width:0}
+.ah-brand small a{color:var(--bronze)!important;text-decoration:none;direction:ltr}
+@media(max-width:900px){.ah-brand small{display:none!important}}
