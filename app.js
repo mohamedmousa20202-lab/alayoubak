@@ -273,12 +273,18 @@ async function handleUser(user) {
 onAuthStateChanged(auth, (user) => { if (!S.registering) handleUser(user); });
 
 // ---------- الهيكل والتنقل ----------
-const TNAV = [["dash", "📊", "لوحة المتابعة"], ["students", "👥", "الطلاب"], ["attendance", "✅", "الحضور"], ["reports", "📑", "التقارير"], ["honor", "🏆", "لوحة الشرف"],
-  ["-", "المحتوى"], ["lessons", "📘", "الدروس"], ["quizzes", "📝", "الاختبارات"], ["bank", "📚", "بنك الأسئلة"], ["labs", "🔬", "المختبر"], ["assignments", "📂", "الواجبات"], ["calendar", "📅", "التقويم"], ["announcements", "📢", "الإعلانات"],
-  ["-", "التواصل والأدوات"], ["messages", "💬", "الرسائل"], ["periodic", "🧪", "الجدول الدوري"], ["calc", "🧮", "حاسبة الكيمياء"]];
-const SNAV = [["home", "🏠", "الرئيسية"], ["progress", "📈", "تقدّمي"], ["honor", "🏆", "لوحة الشرف"],
-  ["-", "التعلّم"], ["lessons", "📘", "الدروس"], ["quizzes", "📝", "الاختبارات"], ["bank", "📚", "بنك الأسئلة"], ["labs", "🔬", "المختبر"], ["assignments", "📂", "الواجبات"], ["calendar", "📅", "التقويم"],
-  ["-", "الأدوات والتواصل"], ["periodic", "🧪", "الجدول الدوري"], ["calc", "🧮", "حاسبة الكيمياء"], ["messages", "💬", "رسائل المعلم"]];
+// رموز الأقسام بأسلوب بطاقات الجدول الدوري: [الرمز، لون الخلفية، لون النص]
+const NAV_EL = { home: ["Hm", "#111827", "#fff"], dash: ["Db", "#111827", "#fff"], students: ["St", "#e7e5e4", "#111827"], attendance: ["At", "#e7e5e4", "#111827"], reports: ["Rp", "#e7e5e4", "#111827"],
+  honor: ["Hn", "#fef3c7", "#111827"], progress: ["Pr", "#e7e5e4", "#111827"], lessons: ["Ls", "#b91c1c", "#fff"], quizzes: ["Ex", "#fde68a", "#111827"], bank: ["Qb", "#bbf7d0", "#111827"],
+  labs: ["Lb", "#fecaca", "#111827"], assignments: ["Hw", "#bfdbfe", "#111827"], calendar: ["Cl", "#e7e5e4", "#111827"], announcements: ["An", "#ddd6fe", "#111827"],
+  messages: ["Ms", "#e7e5e4", "#111827"], periodic: ["Pt", "#e9d5ff", "#111827"], calc: ["Ca", "#e7e5e4", "#111827"] };
+const elChip = (k, cls = "el") => { const [sym, bg, fg] = NAV_EL[k] || ["··", "#e7e5e4", "#111827"]; return `<span class="${cls}" style="background:${bg};color:${fg}" dir="ltr">${sym}</span>`; };
+const TNAV = [["dash", "", "لوحة المتابعة"], ["students", "", "الطلاب"], ["attendance", "", "الحضور"], ["reports", "", "التقارير"], ["honor", "", "لوحة الشرف"],
+  ["-", "المحتوى"], ["lessons", "", "الدروس"], ["quizzes", "", "الاختبارات"], ["bank", "", "بنك الأسئلة"], ["labs", "", "المختبر"], ["assignments", "", "الواجبات"], ["calendar", "", "التقويم"], ["announcements", "", "الإعلانات"],
+  ["-", "التواصل والأدوات"], ["messages", "", "الرسائل"], ["periodic", "", "الجدول الدوري"], ["calc", "", "حاسبة الكيمياء"]];
+const SNAV = [["home", "", "الرئيسية"], ["progress", "", "تقدّمي"], ["honor", "", "لوحة الشرف"],
+  ["-", "التعلّم"], ["lessons", "", "الدروس"], ["quizzes", "", "الاختبارات"], ["bank", "", "بنك الأسئلة"], ["labs", "", "المختبر"], ["assignments", "", "الواجبات"], ["calendar", "", "التقويم"],
+  ["-", "الأدوات والتواصل"], ["periodic", "", "الجدول الدوري"], ["calc", "", "حاسبة الكيمياء"], ["messages", "", "رسائل المعلم"]];
 
 function shell(active) {
   const nav = isTeacher() ? TNAV : SNAV;
@@ -287,9 +293,9 @@ function shell(active) {
   <div class="topbar"><b>${esc(SITE.title)}</b><button id="burger" aria-label="القائمة">☰</button></div>
   <div class="shell">
     <aside class="side" id="side">
-      <div class="brand"><div class="logo">Chem</div><div><b>${esc(SITE.title)}</b><small>${esc(SITE.teacher)}</small></div></div>
-      <nav class="nav">${nav.filter(([k]) => k !== "honor" || SITE.honor !== false || isTeacher()).map(([k, i, l]) => (k === "-" ? `<div class="nav-sec">${i}</div>` : `<a href="#/${k}" class="${active === k ? "on" : ""}" data-k="${k}">${i} ${l}<span class="badge hidden"></span></a>`)).join("")}</nav>
-      <div class="me">${who}${!isTeacher() && SITE.contact ? `<br><small style="color:#8fb0c2">المعلم: ${phone()}</small>` : ""}<br><button class="btn link" id="logout" style="color:#8fb0c2;padding:4px 0">تسجيل الخروج ↩</button></div>
+      <div class="brand"><div class="logo" dir="ltr"><small>13</small><b>Al</b></div><div><b>${esc(SITE.title)}</b><small>${esc(SITE.teacher)}</small></div></div>
+      <nav class="nav">${nav.filter(([k]) => k !== "honor" || SITE.honor !== false || isTeacher()).map(([k, i, l]) => (k === "-" ? `<div class="nav-sec">${i}</div>` : `<a href="#/${k}" class="${active === k ? "on" : ""}" data-k="${k}">${elChip(k)} ${l}<span class="badge hidden"></span></a>`)).join("")}</nav>
+      <div class="me">${who}${!isTeacher() && SITE.contact ? `<br><small class="muted">المعلم: ${phone()}</small>` : ""}<br><button class="btn link" id="logout" style="padding:4px 0">تسجيل الخروج ↩</button></div>
     </aside>
     <main class="main" id="main"><div class="splash" style="min-height:40vh"><div class="spinner"></div></div></main>
   </div>`;
@@ -529,7 +535,7 @@ async function tLessons(main) {
   lessons.sort((a, b) => (a.unit || "").localeCompare(b.unit || "", "ar") || (a.order ?? 0) - (b.order ?? 0) || (ts(a.createdAt) || 0) - (ts(b.createdAt) || 0));
   const views = await Promise.all(lessons.map((l) => count(query(col("views"), where("lessonId", "==", l.id)))));
   main.innerHTML = `<div class="page-head"><div><h1>الدروس</h1><p class="sub">${lessons.length} درس — مقسّمة حسب الصفوف</p></div><a class="btn" href="#/lesson-edit/new">+ درس جديد</a></div><div id="secwrap"></div>`;
-  mountSections($("#secwrap"), "lessons", lessons.map((l, i) => [l, i]), (l, i) => `<div class="item"><div class="ic">📘</div><div class="body">
+  mountSections($("#secwrap"), "lessons", lessons.map((l, i) => [l, i]), (l, i) => `<div class="item">${elChip("lessons", "ic")}<div class="body">
     <div class="t">${esc(l.title)}</div><div class="m">${esc(l.unit || "")} ${classLabel(l.classes)} · فتحه ${views[i]} طالب</div></div>
     <div class="row">${l.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/lesson/${l.id}">معاينة</a><a class="btn sm" href="#/lesson-edit/${l.id}">تعديل</a></div></div>`, { empty: "لا توجد دروس بعد.", noun: "درس", newHref: "#/lesson-edit/new" });
 }
@@ -570,7 +576,7 @@ async function tQuizzes(main) {
   quizzes.sort(byDate);
   const done = await Promise.all(quizzes.map((q) => count(query(col("submissions"), where("quizId", "==", q.id)))));
   main.innerHTML = `<div class="page-head"><div><h1>الاختبارات</h1><p class="sub">تصحيح تلقائي — مفتاح الإجابات محمي ولا يصل للطالب قبل التسليم</p></div><a class="btn" href="#/quiz-edit/new">+ اختبار جديد</a></div><div id="secwrap"></div>`;
-  mountSections($("#secwrap"), "quizzes", quizzes.map((q, i) => [q, i]), (q, i) => `<div class="item"><div class="ic">📝</div><div class="body"><div class="t">${esc(q.title)}</div>
+  mountSections($("#secwrap"), "quizzes", quizzes.map((q, i) => [q, i]), (q, i) => `<div class="item">${elChip("quizzes", "ic")}<div class="body"><div class="t">${esc(q.title)}</div>
       <div class="m">${q.count || 0} سؤال · ${classLabel(q.classes)} · سلّمه ${done[i]} من ${targetSize(sz, q.classes)}</div></div>
       <div class="row">${!q.published ? `<span class="pill gray">مسودة</span>` : q.open ? `<span class="pill ok">مفتوح</span>` : `<span class="pill warn">مغلق</span>`}
       <a class="btn ghost sm" href="#/quiz-results/${q.id}">النتائج</a><a class="btn sm" href="#/quiz-edit/${q.id}">تعديل</a></div></div>`, { empty: "لا توجد اختبارات بعد.", noun: "اختبار", newHref: "#/quiz-edit/new" });
@@ -742,7 +748,7 @@ async function tAssignments(main) {
   const cnt = await Promise.all(as.map((a) => Promise.all([count(query(col("homework"), where("assignmentId", "==", a.id))), count(query(col("homework"), where("assignmentId", "==", a.id), where("graded", "==", false)))])));
   main.innerHTML = `<div class="page-head"><div><h1>الواجبات</h1></div><a class="btn" href="#/assign-edit/new">+ واجب جديد</a></div><div id="secwrap"></div>`;
   mountSections($("#secwrap"), "assignments", as.map((a, i) => [a, i]), (a, i) => { const [tot, pend] = cnt[i];
-    return `<div class="item"><div class="ic">📂</div><div class="body"><div class="t">${esc(a.title)}</div><div class="m">التسليم حتى: ${a.due ? fmt(a.due) : "مفتوح"} · ${classLabel(a.classes)} · ${tot} تسليم${pend ? ` · <b style="color:var(--accent)">${pend} بانتظار التصحيح</b>` : ""}</div></div>
+    return `<div class="item">${elChip("assignments", "ic")}<div class="body"><div class="t">${esc(a.title)}</div><div class="m">التسليم حتى: ${a.due ? fmt(a.due) : "مفتوح"} · ${classLabel(a.classes)} · ${tot} تسليم${pend ? ` · <b style="color:var(--accent)">${pend} بانتظار التصحيح</b>` : ""}</div></div>
     <div class="row">${a.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/assign-subs/${a.id}">التسليمات</a><a class="btn sm" href="#/assign-edit/${a.id}">تعديل</a></div></div>`; }, { empty: "لا توجد واجبات بعد.", noun: "واجب", newHref: "#/assign-edit/new" });
 }
 async function tAssignEdit(main, id) {
@@ -789,7 +795,7 @@ async function tAnnouncements(main) {
   main.innerHTML = `<div class="page-head"><h1>الإعلانات</h1></div>
   <form class="card" id="nf"><div class="field"><label>إعلان جديد</label><input type="text" name="title" placeholder="العنوان" required style="margin-bottom:8px"><textarea name="body" placeholder="نص الإعلان" style="min-height:80px"></textarea></div>
     ${classPicker([])}<button class="btn">نشر الإعلان</button></form>
-  <div class="card">${an.map((x) => `<div class="item"><div class="ic">📢</div><div class="body"><div class="t">${esc(x.title)}</div><div class="m">${fmt(x.createdAt)} ${classLabel(x.classes)}</div><div style="margin-top:6px">${rich(x.body)}</div></div><button class="btn link sm danger" data-del="${x.id}">حذف</button></div>`).join("") || `<div class="empty">لا توجد إعلانات.</div>`}</div>`;
+  <div class="card">${an.map((x) => `<div class="item">${elChip("announcements", "ic")}<div class="body"><div class="t">${esc(x.title)}</div><div class="m">${fmt(x.createdAt)} ${classLabel(x.classes)}</div><div style="margin-top:6px">${rich(x.body)}</div></div><button class="btn link sm danger" data-del="${x.id}">حذف</button></div>`).join("") || `<div class="empty">لا توجد إعلانات.</div>`}</div>`;
   $("#nf").onsubmit = async (e) => { e.preventDefault(); const f = e.target; await addDoc(collection(db, "announcements"), { title: f.title.value.trim(), body: f.body.value, classes: pickedClasses(f), createdAt: serverTimestamp() }); await rebuildCatalog(); toast("تم النشر ✓"); route(); };
   $$("[data-del]", main).forEach((b) => (b.onclick = async () => { if (confirm("حذف الإعلان؟")) { await deleteDoc(doc(db, "announcements", b.dataset.del)); await rebuildCatalog(); route(); } }));
 }
@@ -799,7 +805,7 @@ async function tMessages(main) {
   const threads = await list(query(col("threads"), orderBy("lastAt", "desc"), limit(80)));
   const names = {}; await Promise.all(threads.map(async (t) => { const s = await getDoc(doc(db, "students", t.id)); names[t.id] = s.exists() ? s.data() : { name: "(طالب محذوف)" }; }));
   main.innerHTML = `<div class="page-head"><div><h1>الرسائل</h1><p class="sub">أحدث المحادثات أولاً</p></div><button class="btn" id="newc">+ محادثة جديدة</button></div>
-  <div class="card thread-list">${threads.map((t) => `<div class="item clickable ${t.teacherUnread ? "unread" : ""}" data-sid="${t.id}"><div class="ic">👤</div><div class="body"><div class="t">${esc(names[t.id].name)} <span class="muted" style="font-weight:400;font-size:13px">${esc(names[t.id].className || "")}</span></div><div class="m">${t.lastFrom === "teacher" ? "أنت: " : ""}${esc(t.lastText || "")} · ${ago(t.lastAt)}</div></div></div>`).join("") || `<div class="empty">لا توجد محادثات بعد.</div>`}</div>`;
+  <div class="card thread-list">${threads.map((t) => `<div class="item clickable ${t.teacherUnread ? "unread" : ""}" data-sid="${t.id}"><span class="ic" style="background:#e7e5e4;color:#111827" dir="ltr">St</span><div class="body"><div class="t">${esc(names[t.id].name)} <span class="muted" style="font-weight:400;font-size:13px">${esc(names[t.id].className || "")}</span></div><div class="m">${t.lastFrom === "teacher" ? "أنت: " : ""}${esc(t.lastText || "")} · ${ago(t.lastAt)}</div></div></div>`).join("") || `<div class="empty">لا توجد محادثات بعد.</div>`}</div>`;
   $$("[data-sid]", main).forEach((el) => (el.onclick = () => go("thread/" + el.dataset.sid)));
   $("#newc").onclick = () => {
     openModal(`<h2>محادثة جديدة</h2><div class="row" style="margin-bottom:10px">${clsSelect("nc", prefCls("students"), "كل الصفوف")}<input type="text" id="ns" placeholder="اسم الطالب..." style="flex:1"></div><div id="nl" class="thread-list"></div><button class="btn ghost" data-close>إغلاق</button>`);
@@ -851,23 +857,42 @@ async function catalog() {
 const pubQ = async (k) => ((await catalog())[k] || []).filter(forClass).map((x) => ({ ...x }));
 
 async function sHome(main) {
-  const [an, quizzes, subs, assigns, hw, lessons] = await Promise.all([pubQ("announcements"), pubQ("quizzes"), myQ("submissions"), pubQ("assignments"), myQ("homework"), pubQ("lessons")]);
-  const pendQ = quizzes.filter((q) => q.open && !subs.some((s) => s.quizId === q.id));
+  const [an, quizzes, subs, assigns, hw, lessons, banks] = await Promise.all([pubQ("announcements"), pubQ("quizzes"), myQ("submissions"), pubQ("assignments"), myQ("homework"), pubQ("lessons"), pubQ("banks").catch(() => [])]);
+  const pendQ = quizzes.filter((q) => q.open && !subs.some((s) => s.quizId === q.id)).sort(byDate);
   const pendA = assigns.filter((a) => !hw.some((h) => h.assignmentId === a.id) && (!a.due || ts(a.due) > new Date()));
-  const news = an.sort(byDate).slice(0, 8);
-  const latest = lessons.sort(byDate).slice(0, 3);
-  main.innerHTML = `${SITE.cover ? `<div class="home-cover"><img src="${esc(SITE.cover)}" alt="${esc(SITE.title)}"></div>` : ""}<div class="page-head"><div><h1>أهلاً ${esc(S.me.name.split(" ")[0])} 👋</h1><p class="sub">${esc(S.me.className || "")}</p></div></div>
-  <div class="grid g2">
-    <div class="card"><h3>📝 اختبارات بانتظارك</h3>${pendQ.map((q) => `<div class="item clickable" onclick="location.hash='#/quiz/${q.id}'"><div class="body"><div class="t">${esc(q.title)}</div><div class="m">${q.count} سؤال</div></div><span class="btn sm">ابدأ</span></div>`).join("") || `<p class="muted">لا توجد اختبارات جديدة 👍</p>`}</div>
-    <div class="card"><h3>📂 واجبات مطلوبة</h3>${pendA.map((a) => `<div class="item clickable" onclick="location.hash='#/assign/${a.id}'"><div class="body"><div class="t">${esc(a.title)}</div><div class="m">${a.due ? "حتى " + fmt(a.due) : ""}</div></div><span class="btn sm">سلّم</span></div>`).join("") || `<p class="muted">لا توجد واجبات مطلوبة 👍</p>`}</div>
+  const news = an.sort(byDate).slice(0, 6);
+  const latest = lessons.sort(byDate).slice(0, 4);
+  const first = S.me.name.split(" ")[0];
+  const tiles = [["lessons", "الدروس", `${lessons.length} درس`], ["quizzes", "الاختبارات", pendQ.length ? `${pendQ.length} بانتظارك` : "لا جديد"], ["bank", "بنك الأسئلة", `${banks.length} مجموعة`],
+    ["assignments", "الواجبات", pendA.length ? `${pendA.length} مطلوبة` : "لا جديد"], ["labs", "المختبر", "تجارب تفاعلية"], ["periodic", "الجدول الدوري", "118 عنصراً"]];
+  const hq = pendQ[0];
+  main.innerHTML = `<div class="page-head"><div><p class="sub">${esc(S.me.className || "")}</p><h1>مرحباً، ${esc(first)}</h1></div></div>
+  <nav class="el-grid" aria-label="أقسام المنصة">${tiles.map(([k, l, m], i) => { const [sym, bg, fg] = NAV_EL[k];
+    return `<a href="#/${k}" class="el-tile" style="background:${bg};color:${fg}"><span class="n" dir="ltr">${String(i + 1).padStart(2, "0")}</span><span class="s" dir="ltr">${sym}</span><span class="l">${l}</span><span class="m">${m}</span></a>`; }).join("")}</nav>
+  <div class="home-main">
+    <section class="hero-card">${hq ? `
+      <div class="meta"><span>اختبار مفتوح</span><span dir="ltr">${hq.count} Q${hq.timeLimit ? ` · ${hq.timeLimit} min` : ""}</span></div>
+      <h2>${esc(hq.title)}</h2>${hq.description ? `<p>${esc(hq.description)}</p>` : ""}
+      <div class="go"><a class="btn" href="#/quiz/${hq.id}">ابدأ الاختبار</a>${hq.totalPoints ? `<span class="muted">${hq.totalPoints} درجة · النجاح ${Math.ceil(hq.totalPoints * 0.5)}</span>` : ""}</div>` : `
+      <div class="meta"><span>لا توجد اختبارات بانتظارك</span></div>
+      <h2>تدرّب من بنك الأسئلة</h2><p>حلول فورية لكل سؤال، ولا تُحسب في الدرجات.</p>
+      <div class="go"><a class="btn" href="#/bank">افتح بنك الأسئلة</a></div>`}
+    </section>
+    <section class="home-side">
+      <div class="mini-stats"><div><b dir="ltr">${pendQ.length}</b><span>اختبارات مفتوحة</span></div><div><b dir="ltr">${pendA.length}</b><span>واجبات مطلوبة</span></div><div><b dir="ltr">${subs.length}</b><span>اختبارات أنجزتها</span></div></div>
+      <div class="card"><h3>آخر الدروس</h3>${latest.map((l) => `<a class="line" href="#/lesson/${l.id}"><span>${esc(l.title)}</span><span class="muted">${esc(l.unit || "")}</span></a>`).join("") || `<p class="muted">لم تُنشر دروس بعد.</p>`}</div>
+    </section>
   </div>
-  ${latest.length ? `<div class="card"><h3>📘 أحدث الدروس</h3>${latest.map((l) => `<div class="item clickable" onclick="location.hash='#/lesson/${l.id}'"><div class="ic">📘</div><div class="body"><div class="t">${esc(l.title)}</div><div class="m">${esc(l.unit || "")}</div></div></div>`).join("")}</div>` : ""}
-  <div class="card"><h3>📢 الإعلانات</h3>${news.map((x) => `<div class="item"><div class="body"><div class="t">${esc(x.title)}</div><div class="m">${fmt(x.createdAt)}</div><div style="margin-top:4px">${rich(x.body)}</div></div></div>`).join("") || `<p class="muted">لا توجد إعلانات.</p>`}</div>`;
+  ${pendQ.length > 1 ? `<div class="card"><h3>اختبارات أخرى بانتظارك</h3>${pendQ.slice(1).map((q) => `<div class="item clickable" onclick="location.hash='#/quiz/${q.id}'">${elChip("quizzes", "ic")}<div class="body"><div class="t">${esc(q.title)}</div><div class="m">${q.count} سؤال</div></div><span class="btn sm">ابدأ</span></div>`).join("")}</div>` : ""}
+  <div class="grid g2">
+    <div class="card"><h3>واجبات مطلوبة</h3>${pendA.map((a) => `<div class="item clickable" onclick="location.hash='#/assign/${a.id}'">${elChip("assignments", "ic")}<div class="body"><div class="t">${esc(a.title)}</div><div class="m">${a.due ? "حتى " + fmt(a.due) : ""}</div></div><span class="btn sm">سلّم</span></div>`).join("") || `<p class="muted">لا توجد واجبات مطلوبة.</p>`}</div>
+    <div class="card"><h3>الإعلانات</h3>${news.map((x) => `<div class="item"><div class="body"><div class="t">${esc(x.title)}</div><div class="m">${fmt(x.createdAt)}</div><div style="margin-top:4px">${rich(x.body)}</div></div></div>`).join("") || `<p class="muted">لا توجد إعلانات.</p>`}</div>
+  </div>`;
 }
 async function sLessons(main) {
   const lessons = await pubQ("lessons");
   const units = {}; lessons.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || (ts(a.createdAt) || 0) - (ts(b.createdAt) || 0)).forEach((l) => (units[l.unit || "دروس عامة"] ||= []).push(l));
-  main.innerHTML = `<div class="page-head"><h1>الدروس</h1></div>` + (Object.entries(units).map(([u, ls]) => `<div class="card"><h3>${esc(u)}</h3>${ls.map((l) => `<div class="item clickable" onclick="location.hash='#/lesson/${l.id}'"><div class="ic">📘</div><div class="body"><div class="t">${esc(l.title)}</div><div class="m">${l.v ? "🎬 فيديو " : ""}${l.p ? "📄 ملف" : ""}</div></div></div>`).join("")}</div>`).join("") || `<div class="card empty">لم تُنشر دروس بعد.</div>`);
+  main.innerHTML = `<div class="page-head"><h1>الدروس</h1></div>` + (Object.entries(units).map(([u, ls]) => `<div class="card"><h3>${esc(u)}</h3>${ls.map((l) => `<div class="item clickable" onclick="location.hash='#/lesson/${l.id}'">${elChip("lessons", "ic")}<div class="body"><div class="t">${esc(l.title)}</div><div class="m">${l.v ? "🎬 فيديو " : ""}${l.p ? "📄 ملف" : ""}</div></div></div>`).join("")}</div>`).join("") || `<div class="card empty">لم تُنشر دروس بعد.</div>`);
 }
 async function sLesson(main, id) {
   const s = await getDoc(doc(db, "lessons", id)); if (!s.exists()) return go("lessons"); const l = s.data();
@@ -878,7 +903,7 @@ async function sLesson(main, id) {
 async function sQuizzes(main) {
   const [quizzes, subs] = await Promise.all([pubQ("quizzes"), myQ("submissions")]); quizzes.sort(byDate);
   main.innerHTML = `<div class="page-head"><h1>الاختبارات</h1></div><div class="card">${quizzes.map((q) => { const done = subs.find((s) => s.quizId === q.id);
-    return `<div class="item clickable" onclick="location.hash='#/quiz/${q.id}'"><div class="ic">📝</div><div class="body"><div class="t">${esc(q.title)}</div><div class="m">${q.count} سؤال${q.timeLimit ? ` · ⏱ ${q.timeLimit} دقيقة` : ""}${q.totalPoints ? ` · ${q.totalPoints} درجة` : ""}</div></div>
+    return `<div class="item clickable" onclick="location.hash='#/quiz/${q.id}'">${elChip("quizzes", "ic")}<div class="body"><div class="t">${esc(q.title)}</div><div class="m">${q.count} سؤال${q.timeLimit ? ` · ⏱ ${q.timeLimit} دقيقة` : ""}${q.totalPoints ? ` · ${q.totalPoints} درجة` : ""}</div></div>
     ${done ? `<span class="pill ok">تم التسليم</span>` : q.open ? `<span class="btn sm">ابدأ</span>` : `<span class="pill gray">مغلق</span>`}</div>`; }).join("") || `<div class="empty">لا توجد اختبارات.</div>`}</div>`;
 }
 // ---------- واجهة الاختبار بنمط SwiftAssess (مثل منصة التدريب على الاختبارات الإلكترونية) ----------
@@ -1089,7 +1114,7 @@ async function sQuiz(main, id) {
 async function sAssignments(main) {
   const [as, hw] = await Promise.all([pubQ("assignments"), myQ("homework")]); as.sort(byDate);
   main.innerHTML = `<div class="page-head"><h1>الواجبات</h1></div><div class="card">${as.map((a) => { const h = hw.find((x) => x.assignmentId === a.id); const late = a.due && ts(a.due) < new Date();
-    return `<div class="item clickable" onclick="location.hash='#/assign/${a.id}'"><div class="ic">📂</div><div class="body"><div class="t">${esc(a.title)}</div><div class="m">${a.due ? "حتى " + fmt(a.due) : "بدون موعد"}</div></div>
+    return `<div class="item clickable" onclick="location.hash='#/assign/${a.id}'">${elChip("assignments", "ic")}<div class="body"><div class="t">${esc(a.title)}</div><div class="m">${a.due ? "حتى " + fmt(a.due) : "بدون موعد"}</div></div>
     ${h ? (h.graded ? `<span class="pill ok">${h.grade} من ${a.maxGrade}</span>` : `<span class="pill">تم التسليم</span>`) : late ? `<span class="pill bad">انتهى الموعد</span>` : `<span class="pill warn">مطلوب</span>`}</div>`; }).join("") || `<div class="empty">لا توجد واجبات.</div>`}</div>`;
 }
 async function sAssign(main, id) {
@@ -1246,7 +1271,7 @@ function pCalc(main) {
 async function tBank(main) {
   const banks = (await all("banks")).sort((a, b) => (a.unit || "").localeCompare(b.unit || "", "ar") || byDate(a, b));
   main.innerHTML = `<div class="page-head"><div><h1>بنك الأسئلة</h1><p class="sub">تدريب حر للطلاب مع الحل الفوري — لا يُحسب في الدرجات</p></div><a class="btn" href="#/bank-edit/new">+ مجموعة أسئلة</a></div><div id="secwrap"></div>`;
-  mountSections($("#secwrap"), "bank", banks.map((b, i) => [b, i]), (b) => `<div class="item"><div class="ic">📚</div><div class="body"><div class="t">${esc(b.title)}</div><div class="m">${esc(b.unit || "")} · ${b.count || 0} سؤال · ${classLabel(b.classes)}</div></div>
+  mountSections($("#secwrap"), "bank", banks.map((b, i) => [b, i]), (b) => `<div class="item">${elChip("bank", "ic")}<div class="body"><div class="t">${esc(b.title)}</div><div class="m">${esc(b.unit || "")} · ${b.count || 0} سؤال · ${classLabel(b.classes)}</div></div>
     <div class="row">${b.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/bankq/${b.id}">تجربة</a><a class="btn sm" href="#/bank-edit/${b.id}">تعديل</a></div></div>`, { empty: "لا توجد مجموعات بعد. أضف أسئلة ملازمك هنا ليتدرب عليها الطلاب.", noun: "مجموعة", newHref: "#/bank-edit/new" });
 }
 async function tBankEdit(main, id) {
@@ -1277,7 +1302,7 @@ async function tBankEdit(main, id) {
 async function sBank(main) {
   const banks = await pubQ("banks"); const units = {}; banks.forEach((b) => (units[b.unit || "عام"] ||= []).push(b));
   main.innerHTML = `<div class="page-head"><div><h1>بنك الأسئلة</h1><p class="sub">تدرّب كما تشاء — الحل يظهر فوراً ولا يُحسب في درجاتك</p></div></div>` +
-    (Object.entries(units).map(([u, bs]) => `<div class="card"><h3>${esc(u)}</h3>${bs.map((b) => `<div class="item clickable" onclick="location.hash='#/bankq/${b.id}'"><div class="ic">📚</div><div class="body"><div class="t">${esc(b.title)}</div><div class="m">${b.count} سؤال</div></div><span class="btn sm">تدرّب</span></div>`).join("")}</div>`).join("") || `<div class="card empty">لا توجد أسئلة تدريب بعد.</div>`);
+    (Object.entries(units).map(([u, bs]) => `<div class="card"><h3>${esc(u)}</h3>${bs.map((b) => `<div class="item clickable" onclick="location.hash='#/bankq/${b.id}'">${elChip("bank", "ic")}<div class="body"><div class="t">${esc(b.title)}</div><div class="m">${b.count} سؤال</div></div><span class="btn sm">تدرّب</span></div>`).join("")}</div>`).join("") || `<div class="card empty">لا توجد أسئلة تدريب بعد.</div>`);
 }
 async function sBankQ(main, id) {
   const s = await getDoc(doc(db, "banks", id)); if (!s.exists()) return go("bank"); const b = s.data();
@@ -1310,7 +1335,7 @@ async function sBankQ(main, id) {
 async function tLabs(main) {
   const labs = (await all("labs")).sort(byDate);
   main.innerHTML = `<div class="page-head"><div><h1>المختبر الافتراضي</h1><p class="sub">تجارب محاكاة (مثل PhET) وفيديوهات مع أسئلة قبل التجربة وبعدها</p></div><a class="btn" href="#/lab-edit/new">+ تجربة جديدة</a></div>
-  <div class="card">${labs.map((l) => `<div class="item"><div class="ic">🔬</div><div class="body"><div class="t">${esc(l.title)}</div><div class="m">${esc(l.unit || "")} ${classLabel(l.classes)}</div></div>
+  <div class="card">${labs.map((l) => `<div class="item">${elChip("labs", "ic")}<div class="body"><div class="t">${esc(l.title)}</div><div class="m">${esc(l.unit || "")} ${classLabel(l.classes)}</div></div>
     <div class="row">${l.published ? `<span class="pill ok">منشور</span>` : `<span class="pill gray">مسودة</span>`}<a class="btn ghost sm" href="#/lab/${l.id}">معاينة</a><a class="btn sm" href="#/lab-edit/${l.id}">تعديل</a></div></div>`).join("") || `<div class="empty">لا توجد تجارب بعد.</div>`}</div>`;
 }
 async function tLabEdit(main, id) {
@@ -1346,7 +1371,7 @@ async function sLab(main, id) {
   ${l.pre ? `<div class="card" style="border-inline-start:5px solid var(--accent)"><h3>🤔 قبل التجربة</h3><div class="content">${rich(l.pre)}</div></div>` : ""}
   ${sim ? `<div class="card"><div class="row" style="margin-bottom:8px"><h3 style="margin:0">المحاكاة</h3><span class="spacer"></span><a class="btn ghost sm" target="_blank" rel="noopener" href="${esc(sim)}">فتح بملء الشاشة ↗</a></div><div class="sim"><iframe src="${esc(sim)}" allowfullscreen loading="lazy"></iframe></div></div>` : ""}
   ${l.videoUrl ? `<div class="card">${videoBox(l.videoUrl)}</div>` : ""}
-  ${l.post ? `<div class="card" style="border-inline-start:5px solid var(--brand)"><h3>📝 بعد التجربة</h3><div class="content">${rich(l.post)}</div></div>` : ""}`;
+  ${l.post ? `<div class="card" style="border-inline-start:5px solid var(--brand)"><h3>بعد التجربة</h3><div class="content">${rich(l.post)}</div></div>` : ""}`;
 }
 
 // ---------- التقويم ----------
@@ -1441,8 +1466,8 @@ async function sProgress(main) {
     <div class="stat"><div class="n">${lessons.length - unseen.length} <small class="muted" style="font-size:15px">من ${lessons.length}</small></div><div class="l">دروس فتحتها</div></div></div>
   <div class="card"><h3>درجاتي في الاختبارات</h3>${progressChart(pts)}
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>#</th><th>الاختبار</th><th>الدرجة</th><th>التاريخ</th></tr></thead><tbody>${rows.map((r, i) => `<tr><td>${i + 1}</td><td><a href="#/quiz/${r.q.id}">${esc(r.q.title)}</a></td><td>${r.sc ? `${r.sc.right} من ${r.sc.total} ${pctPill(r.sc.pct)}` : `<span class="pill gray">بانتظار التصحيح</span>`}</td><td class="muted">${fmt(r.s.submittedAt, false)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">لم تحل أي اختبار بعد.</p>`}</div>
-  <div class="grid g2"><div class="card"><h3>📘 دروس لم تفتحها بعد</h3>${unseen.map((l) => `<div class="item clickable" onclick="location.hash='#/lesson/${l.id}'"><div class="body"><div class="t">${esc(l.title)}</div><div class="m">${esc(l.unit || "")}</div></div></div>`).join("") || `<p class="muted">فتحت كل الدروس 👏</p>`}</div>
-  <div class="card"><h3>📂 درجات الواجبات</h3>${hw.filter((h) => aMap[h.assignmentId]).map((h) => `<div class="item"><div class="body"><div class="t">${esc(aMap[h.assignmentId].title)}</div><div class="m">${h.feedback ? esc(h.feedback) : ""}</div></div>${h.graded ? `<span class="pill ok">${h.grade} من ${aMap[h.assignmentId].maxGrade}</span>` : `<span class="pill gray">بانتظار التصحيح</span>`}</div>`).join("") || `<p class="muted">لا توجد واجبات مسلّمة.</p>`}</div></div>`;
+  <div class="grid g2"><div class="card"><h3>دروس لم تفتحها بعد</h3>${unseen.map((l) => `<div class="item clickable" onclick="location.hash='#/lesson/${l.id}'"><div class="body"><div class="t">${esc(l.title)}</div><div class="m">${esc(l.unit || "")}</div></div></div>`).join("") || `<p class="muted">فتحت كل الدروس 👏</p>`}</div>
+  <div class="card"><h3>درجات الواجبات</h3>${hw.filter((h) => aMap[h.assignmentId]).map((h) => `<div class="item"><div class="body"><div class="t">${esc(aMap[h.assignmentId].title)}</div><div class="m">${h.feedback ? esc(h.feedback) : ""}</div></div>${h.graded ? `<span class="pill ok">${h.grade} من ${aMap[h.assignmentId].maxGrade}</span>` : `<span class="pill gray">بانتظار التصحيح</span>`}</div>`).join("") || `<p class="muted">لا توجد واجبات مسلّمة.</p>`}</div></div>`;
   const tip = $("#ptip");
   $$(".pt", main).forEach((g) => { g.onmouseenter = g.onclick = () => { const p = pts[+g.dataset.i]; const c = $(".dot", g).getBoundingClientRect(), w = $(".chart-wrap").getBoundingClientRect();
     tip.innerHTML = `<b>${esc(p.title)}</b><br>${p.pct}% · ${fmt(p.d, false)}`; const lx = c.left - w.left; tip.style.left = (lx > w.width - 200 ? lx - 190 : lx + 8) + "px"; tip.style.top = c.top - w.top - 52 + "px"; tip.classList.remove("hidden"); }; g.onmouseleave = () => tip.classList.add("hidden"); });

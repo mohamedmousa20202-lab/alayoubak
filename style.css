@@ -383,3 +383,74 @@ td.ltr,span.ltr{direction:ltr;unicode-bidi:embed;font-family:ui-monospace,Consol
 .sec-tab.on{background:var(--brand,#0f6b5c);color:#fff;border-color:transparent}.sec-tab.on span{background:rgba(255,255,255,.25);color:#fff}
 .sec-head{margin-bottom:6px}.sec-head h3{margin:0}
 @media (max-width:600px){.item{flex-wrap:wrap}.item>.body{flex:1 1 60%;min-width:0}.item>.row{width:100%;justify-content:flex-end}}
+
+/* ================= التصميم 4: الجدول الدوري ================= */
+:root{
+  --ink:#111827; --muted:#57534e; --line:#e7e5e4; --bg:#fafaf9; --card:#fff;
+  --brand:#111827; --brand-2:#000; --brand-soft:#f1efec; --red:#b91c1c;
+  --accent:#f59e0b; --radius:8px; --shadow:none; --mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
+}
+body{font-family:'Cairo',system-ui,sans-serif}
+a{color:var(--red)}
+h1,h2,h3{font-weight:800}
+.card,.stat{border:1px solid #d6d3d1;box-shadow:none}
+.btn{border-radius:8px}
+.btn.ghost{color:var(--ink);border-color:#d6d3d1}
+.btn.link{color:var(--red)}
+.pill{background:#f1efec;color:var(--ink)}
+.tabs button.on{color:var(--ink)}
+input:focus,select:focus,textarea:focus{border-color:var(--ink)}
+.stat .n,.page-head .n{font-family:var(--mono)}
+th{background:#f5f5f4}
+/* القائمة الجانبية */
+.side{background:#fff;color:var(--ink);border-inline-start:1px solid #d6d3d1}
+.brand{border-bottom:1px solid var(--line)}
+.brand .logo{background:#fff;border:2px solid var(--ink);border-radius:6px;color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;width:46px;height:46px}
+.brand .logo small{font-family:var(--mono);font-size:9px;align-self:flex-end;margin-inline-end:4px;color:var(--ink)}
+.brand .logo b{font-family:var(--mono);font-size:19px;color:var(--ink)}
+.brand b{color:var(--ink)}.brand small{color:var(--muted)}
+.nav-sec{color:#a8a29e}
+.nav a{color:#292524;padding:7px 10px}
+.nav a:hover{background:#f5f5f4}
+.nav a.on{background:var(--ink);color:#fff}
+.nav .el{width:30px;height:30px;flex:none;border-radius:5px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:12.5px}
+.nav a.on .el{outline:2px solid #fff;outline-offset:-2px}
+.nav .badge{background:var(--red);color:#fff}
+.side .me{border-top:1px solid var(--line)}
+.side .me b{color:var(--ink)}
+@media(max-width:900px){.topbar{background:#fff;color:var(--ink);border-bottom:1px solid #d6d3d1}.topbar button{color:var(--ink)}}
+/* أيقونات العناصر */
+.item .ic{border-radius:6px;font-family:var(--mono);font-weight:700;font-size:15px}
+/* صفحة الدخول */
+.login-hero,.login-hero.has-cover{background:var(--ink)}
+.login-hero h1{font-weight:800}
+/* الصفحة الرئيسية للطالب */
+.el-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.el-tile{border-radius:8px;padding:12px 14px;min-height:118px;display:flex;flex-direction:column;text-decoration:none;transition:transform .12s}
+.el-tile:hover{transform:translateY(-2px)}
+.el-tile .n{font-family:var(--mono);font-size:12px;opacity:.85}
+.el-tile .s{font-family:var(--mono);font-size:30px;font-weight:700;margin-top:auto;line-height:1.2}
+.el-tile .l{font-size:14.5px;font-weight:700}
+.el-tile .m{font-size:12px;opacity:.8}
+.home-main{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
+.hero-card{background:#fff;border:2px solid var(--ink);border-radius:10px;padding:24px 28px;display:flex;flex-direction:column;gap:10px}
+.hero-card .meta{display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;color:var(--muted)}
+.hero-card h2{margin:0;font-size:30px;line-height:1.35}
+.hero-card p{margin:0;color:#44403c}
+.hero-card .go{margin-top:auto;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-top:8px}
+.home-side{display:flex;flex-direction:column;gap:12px}
+.home-side .card{margin:0;flex:1}
+.mini-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.mini-stats div{background:#fff;border:1px solid #d6d3d1;border-radius:8px;padding:12px 14px}
+.mini-stats b{display:block;font-family:var(--mono);font-size:28px;line-height:1.2}
+.mini-stats span{font-size:13px;color:var(--muted)}
+.line{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);color:var(--ink);text-decoration:none}
+.line:last-child{border-bottom:0}.line:hover{color:var(--red)}
+.line .muted{font-size:13px}
+@media(max-width:1000px){.el-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.home-main{grid-template-columns:1fr}}
+@media(max-width:520px){.el-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-card h2{font-size:24px}}
+/* أقسام الصفوف */
+.sec-tab{border-radius:8px;border-color:#d6d3d1}
+.sec-tab span{background:#f1efec;color:var(--ink);font-family:var(--mono)}
+.sec-tab.on{background:var(--ink)}
+.hero-card .meta{font-family:'Cairo',sans-serif}.hero-card .meta [dir=ltr]{font-family:var(--mono)}
