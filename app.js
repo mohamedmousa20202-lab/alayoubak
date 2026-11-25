@@ -172,11 +172,11 @@ function downloadCSV(name, rows) {
 const phone = (cls = "") => (SITE.contact ? `<a class="${cls}" href="tel:${esc(String(SITE.contact).replace(/[^\d+]/g, ""))}" dir="ltr" style="color:inherit">📞 ${esc(SITE.contact)}</a>` : "");
 const HEX = `<svg class="hex-bg" viewBox="0 0 200 200" fill="none" stroke="#fff" stroke-width="3"><polygon points="100,10 178,55 178,145 100,190 22,145 22,55"/><polygon points="100,40 152,70 152,130 100,160 48,130 48,70"/><line x1="100" y1="10" x2="100" y2="40"/><line x1="178" y1="145" x2="152" y2="130"/><line x1="22" y1="145" x2="48" y2="130"/></svg>`;
 const hero = () => SITE.cover ? `<div class="login-hero has-cover">
-      <div><div class="pill" style="background:rgba(255,255,255,.12);color:#fff">${esc(SITE.school)}</div></div>
+      <div><div class="pill school-pill">${esc(SITE.school)}</div></div>
       <div><img class="cover-img" src="${esc(SITE.cover)}" alt="${esc(SITE.title)}"><p style="margin-top:18px">دروس، اختبارات، وواجبات — في مكان واحد</p></div>
       <div class="who">${esc(SITE.teacher)}${SITE.contact ? " · " + phone() : ""}</div>
     </div>` : `<div class="login-hero">${HEX}
-      <div><div class="pill" style="background:rgba(255,255,255,.18);color:#fff">${esc(SITE.school)}</div></div>
+      <div><div class="pill school-pill">${esc(SITE.school)}</div></div>
       <div><h1>${esc(SITE.title)}</h1><p>دروس، اختبارات، وواجبات — في مكان واحد</p></div>
       <div class="who">${esc(SITE.teacher)}${SITE.contact ? " · " + phone() : ""}</div>
     </div>`;
@@ -286,10 +286,9 @@ const IC = {
   assignments: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", calendar: "M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM16 3v4M8 3v4M3 10h18",
   announcements: "M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8", messages: "M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z",
   periodic: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z", calc: "M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM8 6h8v4H8zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" };
-const NAV_EL = { home: ["#e0e7ff", "#4338ca", "#6366f1"], dash: ["#e0e7ff", "#4338ca", "#6366f1"], students: ["#fef3c7", "#b45309", "#f59e0b"], attendance: ["#dcfce7", "#15803d", "#22c55e"],
-  reports: ["#e0f2fe", "#0369a1", "#0ea5e9"], honor: ["#fef9c3", "#a16207", "#eab308"], progress: ["#ccfbf1", "#0f766e", "#14b8a6"], lessons: ["#dcfce7", "#15803d", "#22c55e"],
-  quizzes: ["#ffedd5", "#c2410c", "#f97316"], bank: ["#f3e8ff", "#7e22ce", "#a855f7"], labs: ["#fce7f3", "#be185d", "#ec4899"], assignments: ["#e0f2fe", "#0369a1", "#0ea5e9"],
-  calendar: ["#ffe4e6", "#be123c", "#f43f5e"], announcements: ["#ffedd5", "#c2410c", "#f97316"], messages: ["#e0e7ff", "#4338ca", "#6366f1"], periodic: ["#ccfbf1", "#0f766e", "#14b8a6"], calc: ["#e2e8f0", "#334155", "#64748b"] };
+// ألوان منصة المجمع: عنابي / برونزي / برتقالي / أخضر — [خلفية الأيقونة، لون الأيقونة، لون الشريط]
+const NAV_EL = new Proxy({ lessons: "#89191E", quizzes: "#A35D25", bank: "#E08A4F", assignments: "#2E7D5E", labs: "#731519", periodic: "#5C1014" }, {
+  get: (t, k) => ["#FCF3ED", "#89191E", t[k] || "#89191E"] });
 const icSvg = (k, size = 20) => `<svg aria-hidden="true" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${IC[k] || IC.home}"/></svg>`;
 const elChip = (k, cls = "el") => { const [bg, fg] = NAV_EL[k] || ["#e2e8f0", "#334155"]; return `<span class="${cls}" style="background:${bg};color:${fg}">${icSvg(k, cls === "ic" ? 22 : 18)}</span>`; };
 const TNAV = [["dash", "", "لوحة المتابعة"], ["students", "", "الطلاب"], ["attendance", "", "الحضور"], ["reports", "", "التقارير"], ["honor", "", "لوحة الشرف"],
@@ -881,7 +880,7 @@ async function sHome(main) {
   const hq = pendQ[0];
   main.innerHTML = `<div class="page-head"><div><h1>أهلاً ${esc(first)}!</h1><p class="sub">${esc(S.me.className || "")}</p></div></div>
   <nav class="el-grid" aria-label="أقسام المنصة">${tiles.map(([k, l, m]) => { const [bg, fg, acc] = NAV_EL[k];
-    return `<a href="#/${k}" class="el-tile" style="border-bottom-color:${acc}"><span class="ti" style="background:${bg};color:${fg}">${icSvg(k, 26)}</span><span class="l">${l}</span><span class="m">${m}</span></a>`; }).join("")}</nav>
+    return `<a href="#/${k}" class="el-tile" style="--acc:${acc}"><span class="ti" style="background:${bg};color:${fg}">${icSvg(k, 26)}</span><span class="l">${l}</span><span class="m">${m}</span></a>`; }).join("")}</nav>
   <div class="home-main">
     <section class="hero-card">${hq ? `
       <div class="meta"><span class="tag">اختبار مفتوح الآن</span><span>${hq.count} سؤالاً${hq.timeLimit ? ` · ${hq.timeLimit} دقيقة` : ""}</span></div>
