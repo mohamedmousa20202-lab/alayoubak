@@ -19,7 +19,7 @@ export const TEACHER_EMAIL = "mohamedmousa20202@gmail.com";
 export const SITE = {
   title: "منصة الأيوباك",
   teacher: "أ / محمد موسى",
-  school: "مجمع زايد التعليمي - سهيلة",
+  school: "",
   contact: "0526917425",             // رقم التواصل (يظهر في صفحة الدخول والتقارير)
   classes: [
     "الصف التاسع العام",

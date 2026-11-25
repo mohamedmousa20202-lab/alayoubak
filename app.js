@@ -299,7 +299,7 @@ function printTable(title, sub, rows) {
   w.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title><link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
     <style>body{font-family:Tajawal,Arial,sans-serif;color:#383B3D;margin:24px}.hd{border-inline-start:10px solid #89191E;background:#F6DCCA;padding:12px 16px;border-radius:10px;margin-bottom:14px}.hd h1{margin:0;font-size:20px;color:#5C1014}.hd p{margin:4px 0 0;color:#455961}
     table{width:100%;border-collapse:collapse;font-size:13px}th{background:#89191E;color:#fff;padding:7px}td{border-bottom:1px solid #EADFD3;padding:6px;text-align:center}tr:nth-child(even) td{background:#FCF3ED}.ft{margin-top:12px;font-size:11px;color:#455961}@page{size:A4 landscape;margin:12mm}</style></head>
-    <body><div class="hd"><h1>${esc(title)}</h1><p>${esc(SITE.school || "")} · ${esc(SITE.title)} · ${esc(sub || "")}</p></div><table><thead><tr>${rows[0].map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(1).map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>
+    <body><div class="hd"><h1>${esc(title)}</h1><p>${esc(SITE.title)} · ${esc(SITE.teacher)}${SITE.contact ? " · 📞 " + esc(SITE.contact) : ""} · ${esc(sub || "")}</p></div><table><thead><tr>${rows[0].map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(1).map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>
     <div class="ft">${esc(SITE.teacher)} — ${new Date().toLocaleString("ar-AE")}</div><script>document.fonts.ready.then(()=>setTimeout(()=>print(),300))<\/script></body></html>`);
   w.document.close();
 }
@@ -309,13 +309,13 @@ function printTable(title, sub, rows) {
 const phone = (cls = "") => (SITE.contact ? `<a class="${cls}" href="tel:${esc(String(SITE.contact).replace(/[^\d+]/g, ""))}" dir="ltr" style="color:inherit">📞 ${esc(SITE.contact)}</a>` : "");
 const HEX = `<svg class="hex-bg" viewBox="0 0 200 200" fill="none" stroke="#fff" stroke-width="3"><polygon points="100,10 178,55 178,145 100,190 22,145 22,55"/><polygon points="100,40 152,70 152,130 100,160 48,130 48,70"/><line x1="100" y1="10" x2="100" y2="40"/><line x1="178" y1="145" x2="152" y2="130"/><line x1="22" y1="145" x2="48" y2="130"/></svg>`;
 const hero = () => SITE.cover ? `<div class="login-hero has-cover">
-      <div><div class="pill school-pill">${esc(SITE.school)}</div></div>
+      <div>${SITE.contact ? `<div class="pill school-pill">${phone()}</div>` : ""}</div>
       <div><img class="cover-img" src="${esc(SITE.cover)}" alt="${esc(SITE.title)}"><p style="margin-top:18px">دروس، اختبارات، وواجبات — في مكان واحد</p></div>
-      <div class="who">${esc(SITE.teacher)}${SITE.contact ? " · " + phone() : ""}</div>
+      <div class="who">${esc(SITE.teacher)}</div>
     </div>` : `<div class="login-hero">${HEX}
-      <div><div class="pill school-pill">${esc(SITE.school)}</div></div>
+      <div>${SITE.contact ? `<div class="pill school-pill">${phone()}</div>` : ""}</div>
       <div><h1>${esc(SITE.title)}</h1><p>دروس، اختبارات، وواجبات — في مكان واحد</p></div>
-      <div class="who">${esc(SITE.teacher)}${SITE.contact ? " · " + phone() : ""}</div>
+      <div class="who">${esc(SITE.teacher)}</div>
     </div>`;
 function renderLogin(error = "", mode = "login", note = "") {
   const reg = mode === "register";
@@ -446,7 +446,7 @@ function shell(active) {
   $("#app").innerHTML = `
   <header class="apphead">
     <div class="ah-in">
-      <a class="ah-brand" href="#/${isTeacher() ? "dash" : "home"}"><span class="logo">${icSvg("labs", 24)}</span><span><b>${esc(SITE.title)}</b><small>${esc(SITE.school || SITE.teacher)}</small></span></a>
+      <a class="ah-brand" href="#/${isTeacher() ? "dash" : "home"}"><span class="logo">${icSvg("labs", 24)}</span><span><b>${esc(SITE.title)}</b><small>${SITE.contact ? phone() : esc(SITE.teacher)}</small></span></a>
       <span class="spacer"></span>
       <div class="lang-sw" role="group" aria-label="Language"><button type="button" data-lang="ar" class="${uiLang() === "ar" ? "on" : ""}">عربي</button><button type="button" data-lang="en" class="${uiLang() === "en" ? "on" : ""}">English</button></div>
       <div class="ah-user"><span class="av">${esc(ini)}</span><span class="nm"><b>${esc(name)}</b><small>${esc(role)}${!isTeacher() && SITE.contact ? " · " : ""}${!isTeacher() && SITE.contact ? phone() : ""}</small></span></div>
@@ -1907,7 +1907,7 @@ async function tReports(main) {
   $("#pr").onclick = () => window.print();
   $("#csv").onclick = () => downloadCSV(`تقرير-${sel}`, [["الطالب", "متوسط الاختبارات %", "الاختبارات", "الواجبات", "الدروس", "نسبة الحضور %", "غياب", "ملاحظات"], ...rows.map((r) => [r.s.name, r.avg ?? "", `${r.qd}/${nQ}`, `${r.hd}/${nA}`, `${r.ls}/${nL}`, r.at.pct ?? "", r.at.a, r.flags.join("، ")])]);
 }
-const repHead = (title) => `<div class="rep-head"><div><div class="muted">${esc(SITE.school)}</div><h2 style="margin:2px 0">${esc(title)}</h2><div class="muted">مادة الكيمياء · ${esc(SITE.teacher)}${SITE.contact ? " · " + phone() : ""}</div></div><div class="muted" style="text-align:left">${new Date().toLocaleDateString("ar-AE", { day: "numeric", month: "long", year: "numeric" })}</div></div>`;
+const repHead = (title) => `<div class="rep-head"><div><div class="muted" dir="ltr" style="text-align:start">${SITE.contact ? "📞 " + esc(SITE.contact) : ""}</div><h2 style="margin:2px 0">${esc(title)}</h2><div class="muted">مادة الكيمياء · ${esc(SITE.teacher)}${SITE.contact ? " · " + phone() : ""}</div></div><div class="muted" style="text-align:left">${new Date().toLocaleDateString("ar-AE", { day: "numeric", month: "long", year: "numeric" })}</div></div>`;
 async function tReport(main, sid) {
   const ss = await getDoc(doc(db, "students", sid)); if (!ss.exists()) return go("reports"); const s = { id: sid, ...ss.data() };
   const [subs, hw, sessions, quizzes, assigns] = await Promise.all([list(query(col("submissions"), where("studentId", "==", sid))), list(query(col("homework"), where("studentId", "==", sid))), attendanceOf(s.className), all("quizzes"), all("assignments")]);
