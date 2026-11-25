@@ -109,11 +109,16 @@ const imgSrc = (u) => { const v = String(u || "").trim(); return /^https:\/\//i.
 // صورة: رابط عادي، أو ملف مرفوع من الكمبيوتر (file:ID) يُحمَّل من قاعدة البيانات
 const imgTag = (u, extra = "") => { const v = imgSrc(u); if (!v) return ""; return v.startsWith("file:") ? `<img data-fid="${esc(v.slice(5))}" alt="" ${extra}>` : `<img src="${esc(v)}" alt="" ${extra}>`; };
 // أسطر تبدأ بـ | تُعرض جدولاً (السطر الأول رأس الجدول)
+// سطر ملف داخل النص: «ملف: file:ID | الاسم | الحجم» يظهر كملف قابل للفتح
+const fileLine = (L) => { const m = String(L).trim().match(/^(?:ملف|file)\s*:\s*file:([\w-]+)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*(\d+)\s*)?$/i);
+  return m ? `<div class="att-list">${attChip({ id: m[1], name: m[2] || "ملف مرفق", size: +m[3] || 0 })}</div>` : ""; };
+const fileLineText = (a) => (/^image\//.test(a.type) ? `صورة: file:${a.id}` : `ملف: file:${a.id} | ${a.name.replace(/\|/g, "-")} | ${a.size}`);
 function textBlock(t) {
   const lines = String(t || "").split("\n"), out = []; let tb = [];
   const flush = () => { if (!tb.length) return; const rows = tb.map((l) => l.replace(/^\s*\||\|\s*$/g, "").split("|").map((c) => inline(c.trim())));
     out.push(`<div class="qtbl"><table>${rows.map((r, i) => `<tr>${r.map((c) => (i ? `<td>${c}</td>` : `<th>${c}</th>`)).join("")}</tr>`).join("")}</table></div>`); tb = []; };
-  lines.forEach((l) => { if (/^\s*\|/.test(l)) tb.push(l); else { flush(); out.push(`<div class="ql">${inline(l) || "&nbsp;"}</div>`); } });
+  lines.forEach((l) => { if (/^\s*\|/.test(l)) tb.push(l); else { flush(); const fl = fileLine(l), im = /^\s*(?:صورة|img)\s*:\s*file:[\w-]+\s*$/i.test(l) ? imgTag(l.replace(/^\s*(?:صورة|img)\s*:\s*/i, "").trim()) : "";
+    out.push(fl || (im ? `<div class="qimg">${im}</div>` : `<div class="ql">${inline(l) || "&nbsp;"}</div>`)); } });
   flush(); return out.join("");
 }
 const qText = (q) => textBlock(q.text) + (imgSrc(q.image) ? `<div class="qimg">${imgTag(q.image, 'loading="lazy"')}</div>` : "");
@@ -124,6 +129,7 @@ function rich(text) {
     if (L.startsWith("## ")) return `<h2>${inline(L.slice(3))}</h2>`;
     if (/^(img|صورة)\s*:\s*https:\/\//i.test(L)) { const u = safeUrl(L.replace(/^(img|صورة)\s*:\s*/i, "")); return u ? `<img src="${esc(u)}" alt="">` : ""; }
     if (/^(img|صورة)\s*:\s*file:[\w-]+$/i.test(L)) return imgTag(L.replace(/^(img|صورة)\s*:\s*/i, ""));
+    if (fileLine(L)) return fileLine(L);
     if (/^https:\/\/\S+$/.test(L) && ytId(L)) return videoBox(L);
     return `<div>${inline(L)}</div>`;
   }).join("");
@@ -181,7 +187,7 @@ const attachView = (list, title = "الملفات المرفقة") => (list?.len
 function attachField(label = "ملفات مرفقة من الكمبيوتر") {
   return `<div class="field att-field"><label>${label}</label><div class="att-list"></div>
     <div class="row"><label class="btn ghost sm att-btn">${icSvg("assignments", 16)} رفع ملف من الكمبيوتر<input type="file" multiple hidden></label><span class="att-prog muted"></span></div>
-    <p class="hint">PDF أو Word أو PowerPoint أو Excel أو صور أو فيديو قصير — حتى ${fsize(isTeacher() ? MAX_T : MAX_S)} للملف الواحد. يمكنك اختيار أكثر من ملف.</p></div>`;
+    <p class="hint">أي نوع ملف: PDF، Word، PowerPoint، Excel، صور، فيديو، صوت، ZIP… — حتى ${fsize(isTeacher() ? MAX_T : MAX_S)} للملف الواحد. يمكنك اختيار أكثر من ملف.</p></div>`;
 }
 function bindAttach(root, initial = []) {
   const box = $(".att-field", root); let items = [...(initial || [])], busyN = 0;
@@ -199,12 +205,12 @@ function bindAttach(root, initial = []) {
   draw(); return { get: () => items, busy: () => busyN > 0 };
 }
 // زر «إدراج صورة من الكمبيوتر» يضيف سطر «صورة: file:...» داخل مربع نص
-const imgInsertBtn = (target) => `<label class="btn ghost sm">${icSvg("labs", 16)} إدراج صورة من الكمبيوتر<input type="file" accept="image/*" hidden data-ins="${target}"></label>`;
+const imgInsertBtn = (target) => `<label class="btn ghost sm">${icSvg("assignments", 16)} إدراج ملف أو صورة من الكمبيوتر<input type="file" hidden data-ins="${target}"></label>`;
 function bindImgInsert(root) {
   $$("[data-ins]", root).forEach((inp) => (inp.onchange = async () => {
     const f = inp.files[0]; inp.value = ""; if (!f) return; const ta = $(`[name=${inp.dataset.ins}]`, root);
-    try { toast("جارٍ رفع الصورة..."); const a = await uploadFile(f); const pos = ta.selectionStart ?? ta.value.length;
-      const line = `\nصورة: file:${a.id}\n`; ta.value = ta.value.slice(0, pos) + line + ta.value.slice(pos); ta.dispatchEvent(new Event("input")); toast("تمت إضافة الصورة ✓"); }
+    try { toast(`جارٍ رفع «${f.name}»...`); const a = await uploadFile(f); const pos = ta.selectionStart ?? ta.value.length;
+      const line = `\n${fileLineText(a)}\n`; ta.value = ta.value.slice(0, pos) + line + ta.value.slice(pos); ta.dispatchEvent(new Event("input")); toast(`تمت إضافة «${f.name}» ✓`); }
     catch (err) { toast(err.message || errMsg(err)); }
   }));
 }
@@ -736,7 +742,7 @@ async function tQuizEdit(main, id) {
       <textarea data-f="text" style="min-height:60px" placeholder="نص السؤال (يمكن كتابة أكثر من سطر)">${esc(x.text)}</textarea>
       <div class="row" style="margin-top:6px;flex-wrap:nowrap"><label style="margin:0;white-space:nowrap">الدرجة</label><input type="number" data-f="points" min="0.5" step="0.5" value="${x.points || 1}" style="width:80px">
         <input type="text" data-f="image" dir="ltr" value="${esc(x.image || "")}" placeholder="صورة للسؤال (اختياري): رابط https أو ارفعها ←" style="flex:1">
-        <label class="btn ghost sm" style="white-space:nowrap">رفع صورة<input type="file" accept="image/*" hidden data-qimg="${i}"></label></div>
+        <label class="btn ghost sm" style="white-space:nowrap">رفع صورة أو ملف<input type="file" hidden data-qimg="${i}"></label></div>
       ${imgSrc(x.image) ? `<div class="qimg" style="margin-top:6px">${imgTag(x.image)}</div>` : ""}
       <div class="row" style="margin-top:6px;flex-wrap:nowrap"><input type="text" data-f="outcome" value="${esc(x.outcome || "")}" placeholder="ناتج التعلم (اختياري)" style="flex:2"><input type="text" data-f="ocode" dir="ltr" value="${esc(x.ocode || "")}" placeholder="CHM.5.5.01.001.07" style="flex:1"></div>
       <p class="hint" style="margin:6px 0">اختر الدائرة بجانب الإجابة الصحيحة:</p>
@@ -756,7 +762,9 @@ async function tQuizEdit(main, id) {
   $("#qs").addEventListener("change", async (e) => {
     const inp = e.target.closest("[data-qimg]"); if (!inp) return; const f = inp.files[0]; inp.value = ""; if (!f) return;
     sync(); const qi = +inp.dataset.qimg;
-    try { toast("جارٍ رفع الصورة..."); const a = await uploadFile(f); questions[qi].image = "file:" + a.id; draw(); toast("تمت إضافة الصورة ✓"); }
+    try { toast(`جارٍ رفع «${f.name}»...`); const a = await uploadFile(f);
+      if (/^image\//.test(a.type)) questions[qi].image = "file:" + a.id; else questions[qi].text = (questions[qi].text.trim() + "\n" + fileLineText(a)).trim();
+      draw(); toast(`تمت إضافة «${f.name}» ✓`); }
     catch (err) { toast(err.message || errMsg(err)); }
   });
   $("#qs").onclick = (e) => {
@@ -1396,7 +1404,7 @@ async function tBankEdit(main, id) {
   <form class="card" id="bf"><div class="grid g2"><div class="field"><label>العنوان</label><input type="text" name="title" value="${esc(b.title)}" required placeholder="مراجعة الغازات – الجزء 1"></div>
     <div class="field"><label>الوحدة</label><input type="text" name="unit" value="${esc(b.unit)}" placeholder="الوحدة 3: الغازات"></div></div>
     <div class="field"><label>الأسئلة <span class="muted">(نفس شكل لصق الاختبارات، وسطر فارغ بين كل سؤال)</span></label>
-    <div style="margin-bottom:6px">${imgInsertBtn("src")} <span class="hint">ضع المؤشر داخل السؤال قبل خياراته، ثم أدرج الصورة.</span></div><textarea name="src" dir="auto" style="min-height:380px;font-size:15px" placeholder="1- ما عدد مولات O_2 في 32 g ؟&#10;أ) 0.5&#10;ب) 1&#10;ج) 2&#10;د) 4&#10;الإجابة: ب&#10;الشرح: الكتلة المولية 32 g/mol">${esc(b.src)}</textarea><p class="hint" id="pc"></p></div>
+    <div style="margin-bottom:6px">${imgInsertBtn("src")} <span class="hint">ضع المؤشر داخل السؤال قبل خياراته، ثم أدرج الصورة أو الملف.</span></div><textarea name="src" dir="auto" style="min-height:380px;font-size:15px" placeholder="1- ما عدد مولات O_2 في 32 g ؟&#10;أ) 0.5&#10;ب) 1&#10;ج) 2&#10;د) 4&#10;الإجابة: ب&#10;الشرح: الكتلة المولية 32 g/mol">${esc(b.src)}</textarea><p class="hint" id="pc"></p></div>
     ${attachField("ملفات مع المجموعة (ملزمة أو حلول بصيغة PDF مثلاً)")}
     ${classPicker(b.classes)}
     <div class="row"><label class="check"><input type="checkbox" name="pub" ${b.published ? "checked" : ""}> نشر للطلاب</label><span class="spacer"></span>${isNew ? "" : `<button type="button" class="btn ghost" id="del" style="color:var(--danger)">حذف</button>`}<button class="btn" id="save">حفظ</button></div></form>`;
