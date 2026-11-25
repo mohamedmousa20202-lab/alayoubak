@@ -273,12 +273,25 @@ async function handleUser(user) {
 onAuthStateChanged(auth, (user) => { if (!S.registering) handleUser(user); });
 
 // ---------- الهيكل والتنقل ----------
-// رموز الأقسام بأسلوب بطاقات الجدول الدوري: [الرمز، لون الخلفية، لون النص]
-const NAV_EL = { home: ["Hm", "#111827", "#fff"], dash: ["Db", "#111827", "#fff"], students: ["St", "#e7e5e4", "#111827"], attendance: ["At", "#e7e5e4", "#111827"], reports: ["Rp", "#e7e5e4", "#111827"],
-  honor: ["Hn", "#fef3c7", "#111827"], progress: ["Pr", "#e7e5e4", "#111827"], lessons: ["Ls", "#b91c1c", "#fff"], quizzes: ["Ex", "#fde68a", "#111827"], bank: ["Qb", "#bbf7d0", "#111827"],
-  labs: ["Lb", "#fecaca", "#111827"], assignments: ["Hw", "#bfdbfe", "#111827"], calendar: ["Cl", "#e7e5e4", "#111827"], announcements: ["An", "#ddd6fe", "#111827"],
-  messages: ["Ms", "#e7e5e4", "#111827"], periodic: ["Pt", "#e9d5ff", "#111827"], calc: ["Ca", "#e7e5e4", "#111827"] };
-const elChip = (k, cls = "el") => { const [sym, bg, fg] = NAV_EL[k] || ["··", "#e7e5e4", "#111827"]; return `<span class="${cls}" style="background:${bg};color:${fg}" dir="ltr">${sym}</span>`; };
+// أيقونات الأقسام (التصميم 3: مدرسي مرح) — [مسار الأيقونة، خلفية فاتحة، لون الأيقونة، لون مميّز]
+const IC = {
+  home: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z", dash: "M4 20V10M10 20V4M16 20v-7M22 20H2",
+  students: "M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM22 19v-1a4 4 0 0 0-3-3.9M16 3.1a3.5 3.5 0 0 1 0 6.8",
+  attendance: "M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9", reports: "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5",
+  honor: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3", progress: "M3 17l6-6 4 4 8-8M15 7h6v6",
+  lessons: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5",
+  quizzes: "M9 3h6v3H9zM8 5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 14l2 2 4-4",
+  bank: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 1-1 1.7M12 17h.01",
+  labs: "M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7 15h10",
+  assignments: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", calendar: "M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM16 3v4M8 3v4M3 10h18",
+  announcements: "M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1zM16 8a5 5 0 0 1 0 8", messages: "M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z",
+  periodic: "M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z", calc: "M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM8 6h8v4H8zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" };
+const NAV_EL = { home: ["#e0e7ff", "#4338ca", "#6366f1"], dash: ["#e0e7ff", "#4338ca", "#6366f1"], students: ["#fef3c7", "#b45309", "#f59e0b"], attendance: ["#dcfce7", "#15803d", "#22c55e"],
+  reports: ["#e0f2fe", "#0369a1", "#0ea5e9"], honor: ["#fef9c3", "#a16207", "#eab308"], progress: ["#ccfbf1", "#0f766e", "#14b8a6"], lessons: ["#dcfce7", "#15803d", "#22c55e"],
+  quizzes: ["#ffedd5", "#c2410c", "#f97316"], bank: ["#f3e8ff", "#7e22ce", "#a855f7"], labs: ["#fce7f3", "#be185d", "#ec4899"], assignments: ["#e0f2fe", "#0369a1", "#0ea5e9"],
+  calendar: ["#ffe4e6", "#be123c", "#f43f5e"], announcements: ["#ffedd5", "#c2410c", "#f97316"], messages: ["#e0e7ff", "#4338ca", "#6366f1"], periodic: ["#ccfbf1", "#0f766e", "#14b8a6"], calc: ["#e2e8f0", "#334155", "#64748b"] };
+const icSvg = (k, size = 20) => `<svg aria-hidden="true" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${IC[k] || IC.home}"/></svg>`;
+const elChip = (k, cls = "el") => { const [bg, fg] = NAV_EL[k] || ["#e2e8f0", "#334155"]; return `<span class="${cls}" style="background:${bg};color:${fg}">${icSvg(k, cls === "ic" ? 22 : 18)}</span>`; };
 const TNAV = [["dash", "", "لوحة المتابعة"], ["students", "", "الطلاب"], ["attendance", "", "الحضور"], ["reports", "", "التقارير"], ["honor", "", "لوحة الشرف"],
   ["-", "المحتوى"], ["lessons", "", "الدروس"], ["quizzes", "", "الاختبارات"], ["bank", "", "بنك الأسئلة"], ["labs", "", "المختبر"], ["assignments", "", "الواجبات"], ["calendar", "", "التقويم"], ["announcements", "", "الإعلانات"],
   ["-", "التواصل والأدوات"], ["messages", "", "الرسائل"], ["periodic", "", "الجدول الدوري"], ["calc", "", "حاسبة الكيمياء"]];
@@ -293,7 +306,7 @@ function shell(active) {
   <div class="topbar"><b>${esc(SITE.title)}</b><button id="burger" aria-label="القائمة">☰</button></div>
   <div class="shell">
     <aside class="side" id="side">
-      <div class="brand"><div class="logo" dir="ltr"><small>13</small><b>Al</b></div><div><b>${esc(SITE.title)}</b><small>${esc(SITE.teacher)}</small></div></div>
+      <div class="brand"><div class="logo">${icSvg("labs", 24)}</div><div><b>${esc(SITE.title)}</b><small>${esc(SITE.teacher)}</small></div></div>
       <nav class="nav">${nav.filter(([k]) => k !== "honor" || SITE.honor !== false || isTeacher()).map(([k, i, l]) => (k === "-" ? `<div class="nav-sec">${i}</div>` : `<a href="#/${k}" class="${active === k ? "on" : ""}" data-k="${k}">${elChip(k)} ${l}<span class="badge hidden"></span></a>`)).join("")}</nav>
       <div class="me">${who}${!isTeacher() && SITE.contact ? `<br><small class="muted">المعلم: ${phone()}</small>` : ""}<br><button class="btn link" id="logout" style="padding:4px 0">تسجيل الخروج ↩</button></div>
     </aside>
@@ -805,7 +818,7 @@ async function tMessages(main) {
   const threads = await list(query(col("threads"), orderBy("lastAt", "desc"), limit(80)));
   const names = {}; await Promise.all(threads.map(async (t) => { const s = await getDoc(doc(db, "students", t.id)); names[t.id] = s.exists() ? s.data() : { name: "(طالب محذوف)" }; }));
   main.innerHTML = `<div class="page-head"><div><h1>الرسائل</h1><p class="sub">أحدث المحادثات أولاً</p></div><button class="btn" id="newc">+ محادثة جديدة</button></div>
-  <div class="card thread-list">${threads.map((t) => `<div class="item clickable ${t.teacherUnread ? "unread" : ""}" data-sid="${t.id}"><span class="ic" style="background:#e7e5e4;color:#111827" dir="ltr">St</span><div class="body"><div class="t">${esc(names[t.id].name)} <span class="muted" style="font-weight:400;font-size:13px">${esc(names[t.id].className || "")}</span></div><div class="m">${t.lastFrom === "teacher" ? "أنت: " : ""}${esc(t.lastText || "")} · ${ago(t.lastAt)}</div></div></div>`).join("") || `<div class="empty">لا توجد محادثات بعد.</div>`}</div>`;
+  <div class="card thread-list">${threads.map((t) => `<div class="item clickable ${t.teacherUnread ? "unread" : ""}" data-sid="${t.id}">${elChip("students", "ic")}<div class="body"><div class="t">${esc(names[t.id].name)} <span class="muted" style="font-weight:400;font-size:13px">${esc(names[t.id].className || "")}</span></div><div class="m">${t.lastFrom === "teacher" ? "أنت: " : ""}${esc(t.lastText || "")} · ${ago(t.lastAt)}</div></div></div>`).join("") || `<div class="empty">لا توجد محادثات بعد.</div>`}</div>`;
   $$("[data-sid]", main).forEach((el) => (el.onclick = () => go("thread/" + el.dataset.sid)));
   $("#newc").onclick = () => {
     openModal(`<h2>محادثة جديدة</h2><div class="row" style="margin-bottom:10px">${clsSelect("nc", prefCls("students"), "كل الصفوف")}<input type="text" id="ns" placeholder="اسم الطالب..." style="flex:1"></div><div id="nl" class="thread-list"></div><button class="btn ghost" data-close>إغلاق</button>`);
@@ -866,12 +879,12 @@ async function sHome(main) {
   const tiles = [["lessons", "الدروس", `${lessons.length} درس`], ["quizzes", "الاختبارات", pendQ.length ? `${pendQ.length} بانتظارك` : "لا جديد"], ["bank", "بنك الأسئلة", `${banks.length} مجموعة`],
     ["assignments", "الواجبات", pendA.length ? `${pendA.length} مطلوبة` : "لا جديد"], ["labs", "المختبر", "تجارب تفاعلية"], ["periodic", "الجدول الدوري", "118 عنصراً"]];
   const hq = pendQ[0];
-  main.innerHTML = `<div class="page-head"><div><p class="sub">${esc(S.me.className || "")}</p><h1>مرحباً، ${esc(first)}</h1></div></div>
-  <nav class="el-grid" aria-label="أقسام المنصة">${tiles.map(([k, l, m], i) => { const [sym, bg, fg] = NAV_EL[k];
-    return `<a href="#/${k}" class="el-tile" style="background:${bg};color:${fg}"><span class="n" dir="ltr">${String(i + 1).padStart(2, "0")}</span><span class="s" dir="ltr">${sym}</span><span class="l">${l}</span><span class="m">${m}</span></a>`; }).join("")}</nav>
+  main.innerHTML = `<div class="page-head"><div><h1>أهلاً ${esc(first)}!</h1><p class="sub">${esc(S.me.className || "")}</p></div></div>
+  <nav class="el-grid" aria-label="أقسام المنصة">${tiles.map(([k, l, m]) => { const [bg, fg, acc] = NAV_EL[k];
+    return `<a href="#/${k}" class="el-tile" style="border-bottom-color:${acc}"><span class="ti" style="background:${bg};color:${fg}">${icSvg(k, 26)}</span><span class="l">${l}</span><span class="m">${m}</span></a>`; }).join("")}</nav>
   <div class="home-main">
     <section class="hero-card">${hq ? `
-      <div class="meta"><span>اختبار مفتوح</span><span dir="ltr">${hq.count} Q${hq.timeLimit ? ` · ${hq.timeLimit} min` : ""}</span></div>
+      <div class="meta"><span class="tag">اختبار مفتوح الآن</span><span>${hq.count} سؤالاً${hq.timeLimit ? ` · ${hq.timeLimit} دقيقة` : ""}</span></div>
       <h2>${esc(hq.title)}</h2>${hq.description ? `<p>${esc(hq.description)}</p>` : ""}
       <div class="go"><a class="btn" href="#/quiz/${hq.id}">ابدأ الاختبار</a>${hq.totalPoints ? `<span class="muted">${hq.totalPoints} درجة · النجاح ${Math.ceil(hq.totalPoints * 0.5)}</span>` : ""}</div>` : `
       <div class="meta"><span>لا توجد اختبارات بانتظارك</span></div>
